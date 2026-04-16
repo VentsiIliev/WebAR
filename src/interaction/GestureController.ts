@@ -49,7 +49,22 @@ export class GestureController {
 
     if (pointers.length === 1) {
       const dx = current.x - previous.x;
+      const dy = current.y - previous.y;
+
+      // Y rotation (left/right)
       this.target.rotation.y += dx * 0.01;
+
+      // X rotation (tilt up/down)
+      this.target.rotation.x += dy * 0.01;
+
+      // Clamp tilt to avoid flipping
+      const maxTilt = Math.PI / 3;
+      this.target.rotation.x = THREE.MathUtils.clamp(
+        this.target.rotation.x,
+        -maxTilt,
+        maxTilt
+      );
+
       return;
     }
 
