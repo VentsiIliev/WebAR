@@ -27,16 +27,19 @@ export class ModelExplodeController implements ExplodeController {
   private parts: ExplodablePart[] = [];
   private exploded = false;
   private animating = false;
-  private animationStart = 0;
+  private elapsedMs = 0;
   private durationMs = 400;
-  private progress = 0;
+  private startT = 0;
+  private targetT = 0;
   private easing: (t: number) => number = (t) => 1 - Math.pow(1 - t, 3);
 
   register(root: THREE.Object3D, options?: ExplodeOptions): void {
     this.parts = [];
     this.exploded = false;
     this.animating = false;
-    this.progress = 0;
+    this.elapsedMs = 0;
+    this.startT = 0;
+    this.targetT = 0;
     this.durationMs = options?.durationMs ?? 400;
     this.easing = options?.easing ?? ((t) => 1 - Math.pow(1 - t, 3));
 
@@ -66,47 +69,38 @@ export class ModelExplodeController implements ExplodeController {
         explodedPosition,
       });
     });
+
+    this.applyT(0);
   }
 
   explode(): void {
     if (this.exploded && !this.animating) return;
-    this.startAnimation(true);
+    this.startAnimation(1);
   }
 
   collapse(): void {
     if (!this.exploded && !this.animating) return;
-    this.startAnimation(false);
+    this.startAnimation(0);
   }
 
   toggle(): void {
-    if (this.exploded) {
-      this.collapse();
-      return;
-    }
-    this.explode();
+    this.startAnimation(this.exploded ? 0 : 1);
   }
 
   update(deltaMs: number): void {
     if (!this.animating) return;
 
-    this.animationStart += deltaMs;
-    const rawT = Math.min(this.animationStart / this.durationMs, 1);
+    this.elapsedMs += deltaMs;
+    const rawT = Math.min(this.elapsedMs / this.durationMs, 1);
     const eased = this.easing(rawT);
-    const t = this.exploded ? 1 - eased : eased;
+    const currentT = THREE.MathUtils.lerp(this.startT, this.targetT, eased);
 
-    for (const part of this.parts) {
-      part.object.position.lerpVectors(part.originalPosition, part.explodedPosition, t);
-    }
-
-    this.progress = t;
+    this.applyT(currentT);
 
     if (rawT >= 1) {
       this.animating = false;
-      this.exploded = !this.exploded;
-      const finalT = this.exploded ? 1 : 0;
-      for (const part of this.parts) {
-        part.object.position.lerpVectors(part.originalPosition, part.explodedPosition, finalT);
-      }
+      this.exploded = this.targetT === 1;
+      this.applyT(this.targetT);
     }
   }
 
@@ -118,15 +112,27 @@ export class ModelExplodeController implements ExplodeController {
     return this.parts;
   }
 
-  private startAnimation(targetExploded: boolean): void {
+  private startAnimation(targetT: 0 | 1): void {
+    const currentT = this.getCurrentT();
+    this.startT = currentT;
+    this.targetT = targetT;
+    this.elapsedMs = 0;
     this.animating = true;
-    this.animationStart = 0;
+  }
 
-    // Internal convention:
-    // exploded=false + animating -> animating toward exploded state
-    // exploded=true + animating  -> animating toward collapsed state
-    if (targetExploded === this.exploded) {
-      this.exploded = !this.exploded;
+  private getCurrentT(): number {
+    if (!this.animating) {
+      return this.exploded ? 1 : 0;
+    }
+
+    const rawT = Math.min(this.elapsedMs / this.durationMs, 1);
+    const eased = this.easing(rawT);
+    return THREE.MathUtils.lerp(this.startT, this.targetT, eased);
+  }
+
+  private applyT(t: number): void {
+    for (const part of this.parts) {
+      part.object.position.lerpVectors(part.originalPosition, part.explodedPosition, t);
     }
   }
 }
