@@ -9,6 +9,8 @@ export class App {
   private scene!: SceneManager;
   private gestures = new GestureController();
 
+  private lastTap = 0;
+
   async start(container: HTMLElement) {
     const video = await this.cameraManager.start();
     container.appendChild(video);
@@ -16,8 +18,17 @@ export class App {
     this.scene = new SceneManager(container);
     this.scene.start();
 
-    // attach gestures to user-controlled group
+    // attach gestures
     this.gestures.attach(this.scene.getAnchor().userGroup, container);
+
+    // double tap detection
+    container.addEventListener("pointerdown", () => {
+      const now = Date.now();
+      if (now - this.lastTap < 300) {
+        this.scene.toggleExplode();
+      }
+      this.lastTap = now;
+    });
 
     this.tracker.onPose((pose) => {
       this.scene.updatePose(pose);
