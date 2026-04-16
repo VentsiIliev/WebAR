@@ -10,13 +10,36 @@ Enable interactive exploded view for 3D models:
 
 ---
 
-## Requirements
+## FILE PLACEMENT (IMPORTANT)
 
-### Model Requirements
+### New Files
 
-- Model must contain multiple meshes (separate parts)
-- GLB format preferred
-- Logical grouping of components recommended
+```
+src/
+├── interaction/
+│   └── ExplodeController.ts
+```
+
+---
+
+### Modified Files
+
+```
+src/
+├── scene/
+│   └── SceneManager.ts
+├── app/
+│   └── App.ts
+```
+
+---
+
+### Model Location
+
+```
+public/models/
+   your-model.glb
+```
 
 ---
 
@@ -28,10 +51,7 @@ Camera → Tracker → Pose → Scene → Interaction
 
 ### New Component
 
-Add:
-
 Interaction Layer → ExplodeController
-
 
 ```text
 Anchor
@@ -64,43 +84,56 @@ Anchor
 
 ## Implementation Steps
 
-### Step 1 – Load GLB Model
+### Step 1 – Prepare Model
 
-- Use GLTFLoader
-- Add model to `anchor.userGroup`
+- Model must contain multiple meshes
+- Export as GLB
+- Place in `/public/models/`
 
 ---
 
-### Step 2 – Register Model
+### Step 2 – Load GLB Model
+
+(To be added next)
 
 ```ts
-explodeController.register(model);
+loader.load('/models/model.glb', (gltf) => {
+  const model = gltf.scene;
+  anchor.userGroup.add(model);
+  explode.register(model);
+});
 ```
 
 ---
 
-### Step 3 – Hook Double Tap
+### Step 3 – Register Model
 
-Detect double tap:
+Already handled in:
 
-```ts
-let lastTap = 0;
-
-function onTap() {
-  const now = Date.now();
-  if (now - lastTap < 300) {
-    explodeController.toggle();
-  }
-  lastTap = now;
-}
-```
+- `SceneManager.ts`
 
 ---
 
 ### Step 4 – Animate in Render Loop
 
+Already implemented:
+
 ```ts
-explodeController.update(deltaTime);
+explode.update(deltaTime);
+```
+
+---
+
+### Step 5 – Hook Double Tap
+
+Implemented in:
+
+- `App.ts`
+
+```ts
+if (now - lastTap < 300) {
+  scene.toggleExplode();
+}
 ```
 
 ---
@@ -119,8 +152,17 @@ For each part:
 ## Animation Strategy
 
 - Linear interpolation (lerp)
-- Easing (ease-out cubic recommended)
+- Ease-out cubic
 - Duration: ~300–500ms
+
+---
+
+## Current Demo
+
+A temporary multi-part cube structure is used:
+
+- proves explode logic works
+- will be replaced with real model
 
 ---
 
@@ -144,15 +186,11 @@ For each part:
 
 ## Summary
 
-This feature builds on the existing architecture without modifying:
+This feature:
 
-- Camera layer
-- Tracking layer
-- Scene rendering
-
-Only extends:
-
-- Interaction layer
+- Adds zero coupling to tracking
+- Lives fully in interaction layer
+- Is ready for real model integration
 
 ---
 
@@ -160,5 +198,6 @@ Only extends:
 
 1. Add GLTFLoader
 2. Load real model
-3. Plug in ExplodeController
-4. Add double tap detection
+3. Remove demo cubes
+4. Register explode on real model
+5. Test on mobile
