@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { Anchor } from "./Anchor";
 import type { Pose } from "../tracking/Tracker";
+import { ModelExplodeController } from "../interaction/ExplodeController";
 
 export class SceneManager {
   private scene = new THREE.Scene();
@@ -8,6 +9,9 @@ export class SceneManager {
   private renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 
   private anchor = new Anchor();
+  private explode = new ModelExplodeController();
+
+  private lastTime = performance.now();
 
   constructor(container: HTMLElement) {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -20,16 +24,37 @@ export class SceneManager {
 
     this.camera.position.z = 2;
 
-    // Test cube
-    const geometry = new THREE.BoxGeometry();
-    const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-    const cube = new THREE.Mesh(geometry, material);
+    // Create demo multi-part "machine"
+    const group = new THREE.Group();
 
-    this.anchor.userGroup.add(cube);
+    const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+
+    const parts = [
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0.2, 0, 0),
+      new THREE.Vector3(-0.2, 0, 0),
+      new THREE.Vector3(0, 0.2, 0),
+      new THREE.Vector3(0, -0.2, 0),
+    ];
+
+    for (const pos of parts) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), material);
+      mesh.position.copy(pos);
+      group.add(mesh);
+    }
+
+    this.anchor.userGroup.add(group);
+
+    // Register explode controller
+    this.explode.register(group);
   }
 
   getAnchor() {
     return this.anchor;
+  }
+
+  toggleExplode() {
+    this.explode.toggle();
   }
 
   updatePose(pose: Pose) {
@@ -37,6 +62,12 @@ export class SceneManager {
   }
 
   render() {
+    const now = performance.now();
+    const delta = now - this.lastTime;
+    this.lastTime = now;
+
+    this.explode.update(delta);
+
     this.renderer.render(this.scene, this.camera);
   }
 
