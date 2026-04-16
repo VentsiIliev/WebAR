@@ -19,6 +19,13 @@ export class SceneManager {
     this.scene.add(light);
 
     this.camera.position.z = 2;
+
+    // Test cube
+    const geometry = new THREE.BoxGeometry();
+    const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+    const cube = new THREE.Mesh(geometry, material);
+
+    this.anchor.userGroup.add(cube);
   }
 
   getAnchor() {
