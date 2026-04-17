@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { Anchor } from "./Anchor";
 import type { Pose } from "../tracking/Tracker";
-import { ModelExplodeController } from "../interaction/ExplodeController";
+import type { ExperienceModule } from "../modules/ExperienceModule";
 
 export class SceneManager {
   private scene = new THREE.Scene();
@@ -9,7 +9,7 @@ export class SceneManager {
   private renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 
   private anchor = new Anchor();
-  private explode = new ModelExplodeController();
+  private module?: ExperienceModule;
 
   private lastTime = performance.now();
 
@@ -23,53 +23,27 @@ export class SceneManager {
     this.scene.add(light);
 
     this.camera.position.z = 2;
+  }
 
-    // Rubik cube style 3x3x3
-    const group = new THREE.Group();
-
-    const size = 0.12;
-    const gap = 0.02;
-
-    const colors = {
-      white: 0xffffff,
-      yellow: 0xffff00,
-      red: 0xff0000,
-      orange: 0xff7f00,
-      blue: 0x0000ff,
-      green: 0x00ff00,
-      black: 0x111111
-    };
-
-    for (let x = -1; x <= 1; x++) {
-      for (let y = -1; y <= 1; y++) {
-        for (let z = -1; z <= 1; z++) {
-          const materials = [
-            new THREE.MeshStandardMaterial({ color: x === 1 ? colors.red : colors.black }),
-            new THREE.MeshStandardMaterial({ color: x === -1 ? colors.orange : colors.black }),
-            new THREE.MeshStandardMaterial({ color: y === 1 ? colors.white : colors.black }),
-            new THREE.MeshStandardMaterial({ color: y === -1 ? colors.yellow : colors.black }),
-            new THREE.MeshStandardMaterial({ color: z === 1 ? colors.green : colors.black }),
-            new THREE.MeshStandardMaterial({ color: z === -1 ? colors.blue : colors.black }),
-          ];
-
-          const cube = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), materials);
-          cube.position.set(x * (size + gap), y * (size + gap), z * (size + gap));
-          group.add(cube);
-        }
-      }
+  setModule(module: ExperienceModule) {
+    if (this.module) {
+      this.module.unmount(this.anchor.userGroup);
     }
 
-    this.anchor.userGroup.add(group);
+    this.module = module;
+    this.module.mount(this.anchor.userGroup);
+  }
 
-    this.explode.register(group, { distanceMultiplier: 0.3 });
+  getGestureTarget() {
+    return this.module?.getGestureTarget() ?? this.anchor.userGroup;
+  }
+
+  onDoubleTap() {
+    this.module?.onDoubleTap();
   }
 
   getAnchor() {
     return this.anchor;
-  }
-
-  toggleExplode() {
-    this.explode.toggle();
   }
 
   updatePose(pose: Pose) {
@@ -81,7 +55,7 @@ export class SceneManager {
     const delta = now - this.lastTime;
     this.lastTime = now;
 
-    this.explode.update(delta);
+    this.module?.update(delta);
 
     this.renderer.render(this.scene, this.camera);
   }
