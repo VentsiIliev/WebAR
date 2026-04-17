@@ -31,6 +31,7 @@ export class RubikModule implements ExperienceModule {
 
   mount(parent: THREE.Object3D, context: ExperienceModuleContext): void {
     this.context = context;
+    this.context.element.style.touchAction = "none";
 
     const size = 0.12;
     const gap = 0.02;
@@ -309,7 +310,6 @@ export class RubikModule implements ExperienceModule {
 
     const rotation = new THREE.Matrix4();
     rotation.makeRotationAxis(rotationAxis, dir * Math.PI / 2);
-    const rotationQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, dir * Math.PI / 2);
 
     for (const cube of selected) {
       const grid = (cube.userData.grid as THREE.Vector3).clone();
@@ -317,8 +317,6 @@ export class RubikModule implements ExperienceModule {
       grid.set(Math.round(grid.x), Math.round(grid.y), Math.round(grid.z));
       cube.userData.grid = grid;
       cube.position.copy(this.gridToWorld(grid));
-      cube.quaternion.premultiply(rotationQuat);
-      cube.quaternion.normalize();
     }
   }
 
