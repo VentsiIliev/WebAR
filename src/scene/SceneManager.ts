@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { Anchor } from "./Anchor";
 import type { Pose } from "../tracking/Tracker";
-import type { ExperienceModule } from "../modules/ExperienceModule";
+import type { ExperienceModule, ExperienceModuleContext } from "../modules/ExperienceModule";
 
 export class SceneManager {
   private scene = new THREE.Scene();
@@ -10,10 +10,13 @@ export class SceneManager {
 
   private anchor = new Anchor();
   private module?: ExperienceModule;
+  private container: HTMLElement;
 
   private lastTime = performance.now();
 
   constructor(container: HTMLElement) {
+    this.container = container;
+
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(this.renderer.domElement);
 
@@ -31,7 +34,13 @@ export class SceneManager {
     }
 
     this.module = module;
-    this.module.mount(this.anchor.userGroup);
+
+    const context: ExperienceModuleContext = {
+      element: this.container,
+      camera: this.camera,
+    };
+
+    this.module.mount(this.anchor.userGroup, context);
   }
 
   getGestureTarget() {
