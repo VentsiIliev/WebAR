@@ -31,6 +31,7 @@ export class RubikModule implements ExperienceModule {
   private lastTap = 0;
   private tapTimeout: number | null = null;
   private pendingFaceTurn: PendingFaceTurn | null = null;
+  private startedOnCube = false;
 
   private activePointers = new Map<number, { x: number; y: number }>();
   private lastPinchDistance: number | null = null;
@@ -105,6 +106,7 @@ export class RubikModule implements ExperienceModule {
     this.root.clear();
     this.initialTransforms.clear();
     this.pendingFaceTurn = null;
+    this.startedOnCube = false;
   }
 
   update(deltaMs: number): void {
@@ -155,9 +157,11 @@ export class RubikModule implements ExperienceModule {
       this.lastPointerPos.set(event.clientX, event.clientY);
       this.didDrag = false;
       this.pendingFaceTurn = this.pickFace(event.clientX, event.clientY);
+      this.startedOnCube = this.pendingFaceTurn !== null;
     } else if (this.activePointers.size === 2) {
       this.activePointerId = null;
       this.pendingFaceTurn = null;
+      this.startedOnCube = false;
       this.didDrag = false;
       if (this.tapTimeout !== null) {
         window.clearTimeout(this.tapTimeout);
@@ -188,6 +192,7 @@ export class RubikModule implements ExperienceModule {
 
       this.lastPinchDistance = distance;
       this.pendingFaceTurn = null;
+      this.startedOnCube = false;
       this.didDrag = false;
       return;
     }
@@ -214,13 +219,17 @@ export class RubikModule implements ExperienceModule {
         const { axis, dir } = turn;
         const index = this.pendingFaceTurn.grid[axis];
         this.pendingFaceTurn = null;
+        this.startedOnCube = false;
         this.rotateLayerAnimated(axis, index, dir);
         this.lastPointerPos.set(event.clientX, event.clientY);
         return;
       }
+
+      this.lastPointerPos.set(event.clientX, event.clientY);
+      return;
     }
 
-    if (this.didDrag && !this.pendingFaceTurn) {
+    if (this.didDrag && !this.startedOnCube) {
       this.root.rotation.y += dx * 0.01;
       this.root.rotation.x += dy * 0.01;
       const maxTilt = Math.PI / 3;
@@ -251,6 +260,7 @@ export class RubikModule implements ExperienceModule {
     if (this.didDrag) {
       this.didDrag = false;
       this.pendingFaceTurn = null;
+      this.startedOnCube = false;
       return;
     }
 
@@ -262,6 +272,7 @@ export class RubikModule implements ExperienceModule {
         this.tapTimeout = null;
       }
       this.pendingFaceTurn = null;
+      this.startedOnCube = false;
       this.onDoubleTap();
       return;
     }
@@ -270,6 +281,7 @@ export class RubikModule implements ExperienceModule {
     this.tapTimeout = window.setTimeout(() => {
       this.tapTimeout = null;
       this.pendingFaceTurn = null;
+      this.startedOnCube = false;
     }, 250);
   };
 
@@ -281,6 +293,7 @@ export class RubikModule implements ExperienceModule {
     this.activePointerId = null;
     this.didDrag = false;
     this.pendingFaceTurn = null;
+    this.startedOnCube = false;
     if (this.tapTimeout !== null) {
       window.clearTimeout(this.tapTimeout);
       this.tapTimeout = null;
@@ -310,7 +323,7 @@ export class RubikModule implements ExperienceModule {
   }
 
   private resolveDragTurn(normal: THREE.Vector3, dx: number, dy: number): { axis: Axis; dir: number } | null {
-    if (Math.hypot(dx, dy) < 12) return null;
+    if (Math.hypot(dx, dy) < 8) return null;
 
     const horizontal = Math.abs(dx) >= Math.abs(dy);
 
