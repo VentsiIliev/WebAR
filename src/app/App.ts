@@ -100,7 +100,7 @@ export class App {
 
     const module = mode === "rubik"
       ? new RubikModule()
-      : new GenericModelModule();
+      : new GenericModelModule("/models/BrainStem.glb");
 
     this.scene.setModule(module);
 
