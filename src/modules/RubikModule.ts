@@ -2,6 +2,13 @@ import * as THREE from "three";
 import { ModelExplodeController } from "../interaction/ExplodeController";
 import type { ExperienceModule, ExperienceModuleContext } from "./ExperienceModule";
 
+type Axis = "x" | "y" | "z";
+
+interface PendingFaceTurn {
+  grid: THREE.Vector3;
+  normal: THREE.Vector3;
+}
+
 export class RubikModule implements ExperienceModule {
   readonly mode = "rubik" as const;
 
@@ -17,6 +24,17 @@ export class RubikModule implements ExperienceModule {
   private readonly explodeDurationMs = 400;
   private isShuffled = true;
 
+  private activePointerId: number | null = null;
+  private pointerDownPos = new THREE.Vector2();
+  private lastPointerPos = new THREE.Vector2();
+  private didDrag = false;
+  private lastTap = 0;
+  private tapTimeout: number | null = null;
+  private pendingFaceTurn: PendingFaceTurn | null = null;
+
+  private activePointers = new Map<number, { x: number; y: number }>();
+  private lastPinchDistance: number | null = null;
+
   private readonly initialTransforms = new Map<string, {
     position: THREE.Vector3;
     quaternion: THREE.Quaternion;
@@ -24,6 +42,7 @@ export class RubikModule implements ExperienceModule {
 
   mount(parent: THREE.Object3D, context: ExperienceModuleContext): void {
     this.context = context;
+    this.context.element.style.touchAction = "none";
 
     const size = 0.12;
     const gap = 0.02;
@@ -65,14 +84,27 @@ export class RubikModule implements ExperienceModule {
     this.shuffleInstant(12);
     this.refreshExplodeRegistration();
 
+    context.element.addEventListener("pointerdown", this.onPointerDown);
+    context.element.addEventListener("pointermove", this.onPointerMove);
     context.element.addEventListener("pointerup", this.onPointerUp);
+    context.element.addEventListener("pointercancel", this.onPointerCancel);
   }
 
   unmount(parent: THREE.Object3D): void {
+    this.context.element.removeEventListener("pointerdown", this.onPointerDown);
+    this.context.element.removeEventListener("pointermove", this.onPointerMove);
     this.context.element.removeEventListener("pointerup", this.onPointerUp);
+    this.context.element.removeEventListener("pointercancel", this.onPointerCancel);
+    if (this.tapTimeout !== null) {
+      window.clearTimeout(this.tapTimeout);
+      this.tapTimeout = null;
+    }
+    this.activePointers.clear();
+    this.lastPinchDistance = null;
     parent.remove(this.root);
     this.root.clear();
     this.initialTransforms.clear();
+    this.pendingFaceTurn = null;
   }
 
   update(deltaMs: number): void {
@@ -112,38 +144,195 @@ export class RubikModule implements ExperienceModule {
     return this.root;
   }
 
+  private onPointerDown = (event: PointerEvent) => {
+    if (this.isTurning || this.isExplodeTransitioning) return;
+
+    this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (this.activePointers.size === 1) {
+      this.activePointerId = event.pointerId;
+      this.pointerDownPos.set(event.clientX, event.clientY);
+      this.lastPointerPos.set(event.clientX, event.clientY);
+      this.didDrag = false;
+      this.pendingFaceTurn = this.pickFace(event.clientX, event.clientY);
+    } else if (this.activePointers.size === 2) {
+      this.activePointerId = null;
+      this.pendingFaceTurn = null;
+      this.didDrag = false;
+      if (this.tapTimeout !== null) {
+        window.clearTimeout(this.tapTimeout);
+        this.tapTimeout = null;
+      }
+      const [a, b] = Array.from(this.activePointers.values());
+      this.lastPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    this.context.element.setPointerCapture?.(event.pointerId);
+  };
+
+  private onPointerMove = (event: PointerEvent) => {
+    if (!this.activePointers.has(event.pointerId)) return;
+    if (this.isTurning || this.isExplodeTransitioning) return;
+
+    this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (this.activePointers.size === 2) {
+      const [a, b] = Array.from(this.activePointers.values());
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+
+      if (this.lastPinchDistance !== null) {
+        const delta = distance - this.lastPinchDistance;
+        const nextScale = THREE.MathUtils.clamp(this.root.scale.x + delta * 0.005, 0.5, 2.5);
+        this.root.scale.setScalar(nextScale);
+      }
+
+      this.lastPinchDistance = distance;
+      this.pendingFaceTurn = null;
+      this.didDrag = false;
+      return;
+    }
+
+    if (this.activePointerId !== event.pointerId) return;
+
+    const dx = event.clientX - this.lastPointerPos.x;
+    const dy = event.clientY - this.lastPointerPos.y;
+    const totalDx = event.clientX - this.pointerDownPos.x;
+    const totalDy = event.clientY - this.pointerDownPos.y;
+    const dragDistance = Math.hypot(totalDx, totalDy);
+
+    if (dragDistance > 6) {
+      this.didDrag = true;
+      if (this.tapTimeout !== null) {
+        window.clearTimeout(this.tapTimeout);
+        this.tapTimeout = null;
+      }
+    }
+
+    if (this.didDrag && this.pendingFaceTurn && !this.explode.isExploded()) {
+      const turn = this.resolveDragTurn(this.pendingFaceTurn.normal, totalDx, totalDy);
+      if (turn) {
+        const { axis, dir } = turn;
+        const index = this.pendingFaceTurn.grid[axis];
+        this.pendingFaceTurn = null;
+        this.rotateLayerAnimated(axis, index, dir);
+        this.lastPointerPos.set(event.clientX, event.clientY);
+        return;
+      }
+    }
+
+    if (this.didDrag && !this.pendingFaceTurn) {
+      this.root.rotation.y += dx * 0.01;
+      this.root.rotation.x += dy * 0.01;
+      const maxTilt = Math.PI / 3;
+      this.root.rotation.x = THREE.MathUtils.clamp(this.root.rotation.x, -maxTilt, maxTilt);
+    }
+
+    this.lastPointerPos.set(event.clientX, event.clientY);
+  };
+
   private onPointerUp = (event: PointerEvent) => {
-    if (this.isTurning || this.isExplodeTransitioning || this.explode.isExploded()) return;
+    if (!this.activePointers.has(event.pointerId)) return;
 
-    const rect = this.context.element.getBoundingClientRect();
+    this.activePointers.delete(event.pointerId);
+    if (this.activePointers.size < 2) {
+      this.lastPinchDistance = null;
+    }
 
-    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    if (this.activePointers.size > 0) {
+      return;
+    }
 
-    this.raycaster.setFromCamera(this.pointer, this.context.camera);
+    if (this.activePointerId !== null && this.activePointerId !== event.pointerId) return;
 
-    const intersects = this.raycaster.intersectObjects(this.getCubelets());
+    this.activePointerId = null;
 
-    if (intersects.length === 0) return;
+    if (this.isTurning || this.isExplodeTransitioning) return;
 
-    const hit = intersects[0];
-    const cube = hit.object as THREE.Mesh;
-    const normal = hit.face?.normal;
+    if (this.didDrag) {
+      this.didDrag = false;
+      this.pendingFaceTurn = null;
+      return;
+    }
 
-    if (!normal) return;
+    const now = Date.now();
+    if (now - this.lastTap < 300) {
+      this.lastTap = 0;
+      if (this.tapTimeout !== null) {
+        window.clearTimeout(this.tapTimeout);
+        this.tapTimeout = null;
+      }
+      this.pendingFaceTurn = null;
+      this.onDoubleTap();
+      return;
+    }
+    this.lastTap = now;
 
-    const grid = cube.userData.grid as THREE.Vector3;
+    this.tapTimeout = window.setTimeout(() => {
+      this.tapTimeout = null;
+      this.pendingFaceTurn = null;
+    }, 250);
+  };
 
-    if (Math.abs(normal.x) > 0.9) {
-      this.rotateLayerAnimated("x", grid.x, normal.x > 0 ? 1 : -1);
-    } else if (Math.abs(normal.y) > 0.9) {
-      this.rotateLayerAnimated("y", grid.y, normal.y > 0 ? 1 : -1);
-    } else if (Math.abs(normal.z) > 0.9) {
-      this.rotateLayerAnimated("z", grid.z, normal.z > 0 ? 1 : -1);
+  private onPointerCancel = (event: PointerEvent) => {
+    this.activePointers.delete(event.pointerId);
+    if (this.activePointers.size < 2) {
+      this.lastPinchDistance = null;
+    }
+    this.activePointerId = null;
+    this.didDrag = false;
+    this.pendingFaceTurn = null;
+    if (this.tapTimeout !== null) {
+      window.clearTimeout(this.tapTimeout);
+      this.tapTimeout = null;
     }
   };
 
-  private rotateLayerAnimated(axis: "x" | "y" | "z", index: number, dir: number) {
+  private pickFace(clientX: number, clientY: number): PendingFaceTurn | null {
+    if (this.explode.isExploded()) return null;
+
+    const rect = this.context.element.getBoundingClientRect();
+    this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.context.camera);
+
+    const intersects = this.raycaster.intersectObjects(this.getCubelets());
+    if (intersects.length === 0) return null;
+
+    const hit = intersects[0];
+    const cube = hit.object as THREE.Mesh;
+    const normal = hit.face?.normal?.clone();
+    if (!normal) return null;
+
+    return {
+      grid: (cube.userData.grid as THREE.Vector3).clone(),
+      normal,
+    };
+  }
+
+  private resolveDragTurn(normal: THREE.Vector3, dx: number, dy: number): { axis: Axis; dir: number } | null {
+    if (Math.hypot(dx, dy) < 12) return null;
+
+    const horizontal = Math.abs(dx) >= Math.abs(dy);
+
+    if (Math.abs(normal.z) > 0.9) {
+      if (horizontal) return { axis: "y", dir: dx > 0 ? 1 : -1 };
+      return { axis: "x", dir: dy > 0 ? 1 : -1 };
+    }
+
+    if (Math.abs(normal.x) > 0.9) {
+      if (horizontal) return { axis: "y", dir: normal.x > 0 ? (dx > 0 ? -1 : 1) : (dx > 0 ? 1 : -1) };
+      return { axis: "z", dir: dy > 0 ? 1 : -1 };
+    }
+
+    if (Math.abs(normal.y) > 0.9) {
+      if (horizontal) return { axis: "z", dir: dx > 0 ? 1 : -1 };
+      return { axis: "x", dir: normal.y > 0 ? (dy > 0 ? 1 : -1) : (dy > 0 ? -1 : 1) };
+    }
+
+    return null;
+  }
+
+  private rotateLayerAnimated(axis: Axis, index: number, dir: number) {
     this.isTurning = true;
 
     const group = new THREE.Group();
@@ -156,12 +345,14 @@ export class RubikModule implements ExperienceModule {
     let progress = 0;
 
     const animate = () => {
-      progress += 0.1;
+      progress = Math.min(progress + 0.1, 1);
       group.rotation[axis] = progress * target;
 
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
+        group.rotation[axis] = target;
+
         selected.forEach((cube) => {
           this.root.attach(cube);
         });
@@ -176,7 +367,7 @@ export class RubikModule implements ExperienceModule {
     animate();
   }
 
-  private rotateLayerInstant(axis: "x" | "y" | "z", index: number, dir: number) {
+  private rotateLayerInstant(axis: Axis, index: number, dir: number) {
     const group = new THREE.Group();
     this.root.add(group);
 
@@ -200,23 +391,23 @@ export class RubikModule implements ExperienceModule {
     });
   }
 
-  private getLayer(axis: "x" | "y" | "z", index: number): THREE.Object3D[] {
+  private getLayer(axis: Axis, index: number): THREE.Object3D[] {
     return this.getCubelets().filter((cube) => {
       const grid = cube.userData.grid as THREE.Vector3;
       return Math.round(grid[axis]) === Math.round(index);
     });
   }
 
-  private snapLayerState(selected: THREE.Object3D[], axis: "x" | "y" | "z", dir: number) {
-    const rotation = new THREE.Matrix4();
-    rotation.makeRotationAxis(
+  private snapLayerState(selected: THREE.Object3D[], axis: Axis, dir: number) {
+    const rotationAxis =
       axis === "x"
         ? new THREE.Vector3(1, 0, 0)
         : axis === "y"
           ? new THREE.Vector3(0, 1, 0)
-          : new THREE.Vector3(0, 0, 1),
-      dir * Math.PI / 2
-    );
+          : new THREE.Vector3(0, 0, 1);
+
+    const rotation = new THREE.Matrix4();
+    rotation.makeRotationAxis(rotationAxis, dir * Math.PI / 2);
 
     for (const cube of selected) {
       const grid = (cube.userData.grid as THREE.Vector3).clone();
@@ -266,7 +457,7 @@ export class RubikModule implements ExperienceModule {
   private shuffleInstant(moveCount: number) {
     this.solveInstant();
 
-    const axes: Array<"x" | "y" | "z"> = ["x", "y", "z"];
+    const axes: Axis[] = ["x", "y", "z"];
     const indices = [-1, 0, 1];
     const dirs = [-1, 1];
 
