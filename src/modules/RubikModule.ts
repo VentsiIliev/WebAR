@@ -22,6 +22,7 @@ export class RubikModule implements ExperienceModule {
   private lastPointerPos = new THREE.Vector2();
   private didDrag = false;
   private lastTap = 0;
+  private tapTimeout: number | null = null;
 
   private readonly initialTransforms = new Map<string, {
     position: THREE.Vector3;
@@ -82,6 +83,10 @@ export class RubikModule implements ExperienceModule {
     this.context.element.removeEventListener("pointermove", this.onPointerMove);
     this.context.element.removeEventListener("pointerup", this.onPointerUp);
     this.context.element.removeEventListener("pointercancel", this.onPointerCancel);
+    if (this.tapTimeout !== null) {
+      window.clearTimeout(this.tapTimeout);
+      this.tapTimeout = null;
+    }
     parent.remove(this.root);
     this.root.clear();
     this.initialTransforms.clear();
@@ -145,6 +150,10 @@ export class RubikModule implements ExperienceModule {
 
     if (Math.hypot(totalDx, totalDy) > 6) {
       this.didDrag = true;
+      if (this.tapTimeout !== null) {
+        window.clearTimeout(this.tapTimeout);
+        this.tapTimeout = null;
+      }
     }
 
     if (this.didDrag) {
@@ -172,44 +181,56 @@ export class RubikModule implements ExperienceModule {
     const now = Date.now();
     if (now - this.lastTap < 300) {
       this.lastTap = 0;
+      if (this.tapTimeout !== null) {
+        window.clearTimeout(this.tapTimeout);
+        this.tapTimeout = null;
+      }
       this.onDoubleTap();
       return;
     }
     this.lastTap = now;
 
-    if (this.explode.isExploded()) return;
+    this.tapTimeout = window.setTimeout(() => {
+      this.tapTimeout = null;
 
-    const rect = this.context.element.getBoundingClientRect();
+      if (this.explode.isExploded() || this.isTurning || this.isExplodeTransitioning) return;
 
-    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      const rect = this.context.element.getBoundingClientRect();
 
-    this.raycaster.setFromCamera(this.pointer, this.context.camera);
+      this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    const intersects = this.raycaster.intersectObjects(this.getCubelets());
+      this.raycaster.setFromCamera(this.pointer, this.context.camera);
 
-    if (intersects.length === 0) return;
+      const intersects = this.raycaster.intersectObjects(this.getCubelets());
 
-    const hit = intersects[0];
-    const cube = hit.object as THREE.Mesh;
-    const normal = hit.face?.normal;
+      if (intersects.length === 0) return;
 
-    if (!normal) return;
+      const hit = intersects[0];
+      const cube = hit.object as THREE.Mesh;
+      const normal = hit.face?.normal;
 
-    const grid = cube.userData.grid as THREE.Vector3;
+      if (!normal) return;
 
-    if (Math.abs(normal.x) > 0.9) {
-      this.rotateLayerAnimated("x", grid.x, normal.x > 0 ? 1 : -1);
-    } else if (Math.abs(normal.y) > 0.9) {
-      this.rotateLayerAnimated("y", grid.y, normal.y > 0 ? 1 : -1);
-    } else if (Math.abs(normal.z) > 0.9) {
-      this.rotateLayerAnimated("z", grid.z, normal.z > 0 ? 1 : -1);
-    }
+      const grid = cube.userData.grid as THREE.Vector3;
+
+      if (Math.abs(normal.x) > 0.9) {
+        this.rotateLayerAnimated("x", grid.x, normal.x > 0 ? 1 : -1);
+      } else if (Math.abs(normal.y) > 0.9) {
+        this.rotateLayerAnimated("y", grid.y, normal.y > 0 ? 1 : -1);
+      } else if (Math.abs(normal.z) > 0.9) {
+        this.rotateLayerAnimated("z", grid.z, normal.z > 0 ? 1 : -1);
+      }
+    }, 250);
   };
 
   private onPointerCancel = (_event: PointerEvent) => {
     this.activePointerId = null;
     this.didDrag = false;
+    if (this.tapTimeout !== null) {
+      window.clearTimeout(this.tapTimeout);
+      this.tapTimeout = null;
+    }
   };
 
   private rotateLayerAnimated(axis: "x" | "y" | "z", index: number, dir: number) {
