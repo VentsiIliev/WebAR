@@ -122,7 +122,7 @@ export class RubikModule implements ExperienceModule {
 
     this.raycaster.setFromCamera(this.pointer, this.context.camera);
 
-    const intersects = this.raycaster.intersectObjects(this.root.children);
+    const intersects = this.raycaster.intersectObjects(this.getCubelets());
 
     if (intersects.length === 0) return;
 
@@ -193,8 +193,15 @@ export class RubikModule implements ExperienceModule {
     this.snapLayerState(selected, axis, dir);
   }
 
+  private getCubelets(): THREE.Object3D[] {
+    return this.root.children.filter((child) => {
+      const grid = child.userData?.grid;
+      return child instanceof THREE.Mesh && grid instanceof THREE.Vector3;
+    });
+  }
+
   private getLayer(axis: "x" | "y" | "z", index: number): THREE.Object3D[] {
-    return this.root.children.filter((cube) => {
+    return this.getCubelets().filter((cube) => {
       const grid = cube.userData.grid as THREE.Vector3;
       return Math.round(grid[axis]) === Math.round(index);
     });
@@ -229,7 +236,7 @@ export class RubikModule implements ExperienceModule {
 
   private captureInitialTransforms() {
     this.initialTransforms.clear();
-    this.root.children.forEach((cube) => {
+    this.getCubelets().forEach((cube) => {
       this.initialTransforms.set(cube.uuid, {
         position: cube.position.clone(),
         quaternion: cube.quaternion.clone(),
@@ -238,7 +245,7 @@ export class RubikModule implements ExperienceModule {
   }
 
   private solveInstant() {
-    this.root.children.forEach((cube) => {
+    this.getCubelets().forEach((cube) => {
       const initial = this.initialTransforms.get(cube.uuid);
       if (!initial) return;
 
