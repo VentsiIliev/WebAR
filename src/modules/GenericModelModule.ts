@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { ModelExplodeController } from "../interaction/ExplodeController";
-import type { ExperienceModule } from "./ExperienceModule";
+import type { ExperienceModule, ExperienceModuleContext } from "./ExperienceModule";
 
 export class GenericModelModule implements ExperienceModule {
   readonly mode = "model" as const;
@@ -8,7 +8,7 @@ export class GenericModelModule implements ExperienceModule {
   private root = new THREE.Group();
   private explode = new ModelExplodeController();
 
-  mount(parent: THREE.Object3D): void {
+  mount(parent: THREE.Object3D, _context: ExperienceModuleContext): void {
     const material = new THREE.MeshStandardMaterial({ color: 0x00ffcc });
 
     const parts = [
