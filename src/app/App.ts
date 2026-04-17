@@ -36,11 +36,11 @@ export class App {
 
     await this.tracker.start();
 
-    // TEMP: simulate pose
+    // TEMP: simulate stable pose
     setInterval(() => {
       this.tracker["emitPose"]?.({
         position: [0, 0, -1],
-        rotation: [0, Date.now() * 0.001, 0],
+        rotation: [0, 0, 0],
         visible: true,
       });
     }, 16);
