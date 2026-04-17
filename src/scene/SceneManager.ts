@@ -17,13 +17,23 @@ export class SceneManager {
   constructor(container: HTMLElement) {
     this.container = container;
 
+    this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.outputEncoding = THREE.sRGBEncoding;
+    this.renderer.physicallyCorrectLights = true;
     container.appendChild(this.renderer.domElement);
 
     this.scene.add(this.anchor.markerRoot);
 
-    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-    this.scene.add(light);
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    this.scene.add(hemiLight);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    this.scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(1, 2, 1);
+    this.scene.add(directionalLight);
 
     this.camera.position.z = 2;
   }

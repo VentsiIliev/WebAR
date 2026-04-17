@@ -247,6 +247,9 @@ export class RubikModule implements ExperienceModule {
       this.lastPinchDistance = null;
     }
 
+    // Release pointer capture to allow other elements (like the button) to receive events
+    this.context.element.releasePointerCapture?.(event.pointerId);
+
     if (this.activePointers.size > 0) {
       return;
     }
@@ -290,6 +293,8 @@ export class RubikModule implements ExperienceModule {
     if (this.activePointers.size < 2) {
       this.lastPinchDistance = null;
     }
+    // Release pointer capture to allow other elements to receive events
+    this.context.element.releasePointerCapture?.(event.pointerId);
     this.activePointerId = null;
     this.didDrag = false;
     this.pendingFaceTurn = null;

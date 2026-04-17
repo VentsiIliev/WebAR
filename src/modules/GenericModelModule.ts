@@ -11,22 +11,33 @@ export class GenericModelModule implements ExperienceModule {
   private loader = new GLTFLoader();
   private isMounted = false;
   private placeholder: THREE.Object3D | null = null;
+  private readonly modelPath: string;
+
+  constructor(modelPath = "/models/cobot.glb") {
+    this.modelPath = modelPath;
+  }
 
   mount(parent: THREE.Object3D, _context: ExperienceModuleContext): void {
     this.isMounted = true;
     this.root.clear();
+    this.root.visible = true;
     parent.add(this.root);
 
     // Always show something immediately
     this.placeholder = this.createPlaceholder();
     this.root.add(this.placeholder);
     this.explode.register(this.placeholder);
+    console.log("GenericModelModule mounted, placeholder visible");
 
     this.loader.load(
-      "/models/disk.glb",
+      this.modelPath,
       (gltf) => {
-        if (!this.isMounted) return;
+        if (!this.isMounted) {
+          console.log(`${this.modelPath} loaded but module unmounted, ignoring`);
+          return;
+        }
 
+        console.log(`${this.modelPath} loaded successfully`);
         const model = gltf.scene;
 
         let meshCount = 0;
@@ -37,31 +48,59 @@ export class GenericModelModule implements ExperienceModule {
           }
         });
 
+        console.log(`${this.modelPath} meshes found:`, meshCount);
+
         if (meshCount === 0) {
           console.warn("GLB has no meshes, keeping placeholder");
           return;
         }
 
-        const box = new THREE.Box3().setFromObject(model);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
+        model.updateWorldMatrix(true, true);
+
+        const originalBox = new THREE.Box3().setFromObject(model);
+        const originalCenter = originalBox.getCenter(new THREE.Vector3());
+        const originalSize = originalBox.getSize(new THREE.Vector3());
+        const maxDim = Math.max(originalSize.x, originalSize.y, originalSize.z);
 
         if (!Number.isFinite(maxDim) || maxDim <= 0) {
           console.warn("Invalid GLB bounds, keeping placeholder");
           return;
         }
 
-        model.position.sub(center);
-        model.scale.setScalar(0.6 / maxDim);
+        const scale = Math.min(2.2 / maxDim, 4);
+        model.scale.setScalar(scale);
+        model.updateWorldMatrix(true, true);
+
+        const scaledBox = new THREE.Box3().setFromObject(model);
+        const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+
+        model.position.sub(scaledCenter);
+        this.root.position.set(0, 0, 0);
+
+        model.traverse((child) => {
+          if (!(child instanceof THREE.Mesh)) return;
+
+          const applyMaterial = (material: THREE.Material) => {
+            material.side = THREE.DoubleSide;
+            material.needsUpdate = true;
+          };
+
+          if (Array.isArray(child.material)) {
+            child.material.forEach(applyMaterial);
+          } else {
+            applyMaterial(child.material);
+          }
+        });
 
         if (this.placeholder) {
           this.root.remove(this.placeholder);
           this.placeholder = null;
+          console.log("Placeholder removed, adding model");
         }
 
         this.root.add(model);
         this.explode.register(model);
+        console.log(`${this.modelPath} added to scene`);
       },
       undefined,
       (error) => {

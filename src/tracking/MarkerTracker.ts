@@ -15,8 +15,8 @@ export class MarkerTracker implements Tracker {
     this.callback = callback;
   }
 
-  // example emit
-  protected emitPose(pose: Pose) {
+  // Emit a pose to all registered callbacks
+  emitPose(pose: Pose): void {
     this.callback?.(pose);
   }
 }

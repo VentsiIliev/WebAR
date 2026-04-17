@@ -14,6 +14,8 @@ export class App {
 
   private mode: ExperienceMode = "rubik";
   private lastTap = 0;
+  private isSwitching = false;
+  private activePointerIds = new Set<number>();
 
   async start(container: HTMLElement) {
     const video = await this.cameraManager.start();
@@ -24,14 +26,34 @@ export class App {
 
     this.setMode(this.mode, container);
 
-    container.addEventListener("pointerdown", () => {
+    container.addEventListener("pointerdown", (event) => {
       if (this.mode !== "model") return;
+
+      if (event.pointerType === "touch") {
+        this.activePointerIds.add(event.pointerId);
+      }
+
+      if (this.activePointerIds.size > 1) {
+        return; // Ignore pinch/zoom touch gestures for double-tap detection
+      }
 
       const now = Date.now();
       if (now - this.lastTap < 300) {
         this.scene.onDoubleTap();
       }
       this.lastTap = now;
+    });
+
+    container.addEventListener("pointerup", (event) => {
+      if (event.pointerType === "touch") {
+        this.activePointerIds.delete(event.pointerId);
+      }
+    });
+
+    container.addEventListener("pointercancel", (event) => {
+      if (event.pointerType === "touch") {
+        this.activePointerIds.delete(event.pointerId);
+      }
     });
 
     const button = document.createElement("button");
@@ -42,8 +64,16 @@ export class App {
     button.style.zIndex = "10";
 
     button.onclick = () => {
+      if (this.isSwitching) return;  // Prevent rapid switching
+      
+      this.isSwitching = true;
       this.mode = this.mode === "rubik" ? "model" : "rubik";
       this.setMode(this.mode, container);
+      
+      // Re-enable switching after a brief delay
+      setTimeout(() => {
+        this.isSwitching = false;
+      }, 300);
     };
 
     container.appendChild(button);
@@ -54,8 +84,9 @@ export class App {
 
     await this.tracker.start();
 
+    // Desktop testing: emit fake poses to simulate marker tracking
     setInterval(() => {
-      this.tracker["emitPose"]?.({
+      this.tracker.emitPose({
         position: [0, 0, -1],
         rotation: [0, 0, 0],
         visible: true,
@@ -64,6 +95,7 @@ export class App {
   }
 
   private setMode(mode: ExperienceMode, container: HTMLElement) {
+    console.log("Switching mode from", this.mode, "to", mode);
     this.gestures.detach();
 
     const module = mode === "rubik"
@@ -75,5 +107,6 @@ export class App {
     if (mode === "model") {
       this.gestures.attach(this.scene.getGestureTarget(), container);
     }
+    console.log("Mode switched successfully to", mode);
   }
 }

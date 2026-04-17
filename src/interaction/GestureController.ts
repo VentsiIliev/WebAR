@@ -88,5 +88,7 @@ export class GestureController {
     if (this.activePointers.size < 2) {
       this.lastPinchDistance = null;
     }
+    // Release pointer capture to allow other elements (like the button) to receive events
+    this.element?.releasePointerCapture?.(event.pointerId);
   };
 }
