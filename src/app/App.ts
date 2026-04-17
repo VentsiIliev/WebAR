@@ -24,8 +24,9 @@ export class App {
 
     this.setMode(this.mode, container);
 
-    // double tap
     container.addEventListener("pointerdown", () => {
+      if (this.mode !== "model") return;
+
       const now = Date.now();
       if (now - this.lastTap < 300) {
         this.scene.onDoubleTap();
@@ -33,7 +34,6 @@ export class App {
       this.lastTap = now;
     });
 
-    // UI button
     const button = document.createElement("button");
     button.innerText = "Switch Mode";
     button.style.position = "absolute";
@@ -54,7 +54,6 @@ export class App {
 
     await this.tracker.start();
 
-    // stable pose
     setInterval(() => {
       this.tracker["emitPose"]?.({
         position: [0, 0, -1],
@@ -65,12 +64,16 @@ export class App {
   }
 
   private setMode(mode: ExperienceMode, container: HTMLElement) {
+    this.gestures.detach();
+
     const module = mode === "rubik"
       ? new RubikModule()
       : new GenericModelModule();
 
     this.scene.setModule(module);
 
-    this.gestures.attach(this.scene.getGestureTarget(), container);
+    if (mode === "model") {
+      this.gestures.attach(this.scene.getGestureTarget(), container);
+    }
   }
 }
