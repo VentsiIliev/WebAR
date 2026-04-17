@@ -24,29 +24,44 @@ export class SceneManager {
 
     this.camera.position.z = 2;
 
-    // Create demo multi-part "machine"
+    // Rubik cube style 3x3x3
     const group = new THREE.Group();
 
-    const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+    const size = 0.12;
+    const gap = 0.02;
 
-    const parts = [
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0.2, 0, 0),
-      new THREE.Vector3(-0.2, 0, 0),
-      new THREE.Vector3(0, 0.2, 0),
-      new THREE.Vector3(0, -0.2, 0),
-    ];
+    const colors = {
+      white: 0xffffff,
+      yellow: 0xffff00,
+      red: 0xff0000,
+      orange: 0xff7f00,
+      blue: 0x0000ff,
+      green: 0x00ff00,
+      black: 0x111111
+    };
 
-    for (const pos of parts) {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), material);
-      mesh.position.copy(pos);
-      group.add(mesh);
+    for (let x = -1; x <= 1; x++) {
+      for (let y = -1; y <= 1; y++) {
+        for (let z = -1; z <= 1; z++) {
+          const materials = [
+            new THREE.MeshStandardMaterial({ color: x === 1 ? colors.red : colors.black }),
+            new THREE.MeshStandardMaterial({ color: x === -1 ? colors.orange : colors.black }),
+            new THREE.MeshStandardMaterial({ color: y === 1 ? colors.white : colors.black }),
+            new THREE.MeshStandardMaterial({ color: y === -1 ? colors.yellow : colors.black }),
+            new THREE.MeshStandardMaterial({ color: z === 1 ? colors.green : colors.black }),
+            new THREE.MeshStandardMaterial({ color: z === -1 ? colors.blue : colors.black }),
+          ];
+
+          const cube = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), materials);
+          cube.position.set(x * (size + gap), y * (size + gap), z * (size + gap));
+          group.add(cube);
+        }
+      }
     }
 
     this.anchor.userGroup.add(group);
 
-    // Register explode controller
-    this.explode.register(group);
+    this.explode.register(group, { distanceMultiplier: 0.3 });
   }
 
   getAnchor() {
