@@ -32,6 +32,9 @@ export class RubikModule implements ExperienceModule {
   private tapTimeout: number | null = null;
   private pendingFaceTurn: PendingFaceTurn | null = null;
 
+  private activePointers = new Map<number, { x: number; y: number }>();
+  private lastPinchDistance: number | null = null;
+
   private readonly initialTransforms = new Map<string, {
     position: THREE.Vector3;
     quaternion: THREE.Quaternion;
@@ -96,6 +99,8 @@ export class RubikModule implements ExperienceModule {
       window.clearTimeout(this.tapTimeout);
       this.tapTimeout = null;
     }
+    this.activePointers.clear();
+    this.lastPinchDistance = null;
     parent.remove(this.root);
     this.root.clear();
     this.initialTransforms.clear();
@@ -142,17 +147,52 @@ export class RubikModule implements ExperienceModule {
   private onPointerDown = (event: PointerEvent) => {
     if (this.isTurning || this.isExplodeTransitioning) return;
 
-    this.activePointerId = event.pointerId;
-    this.pointerDownPos.set(event.clientX, event.clientY);
-    this.lastPointerPos.set(event.clientX, event.clientY);
-    this.didDrag = false;
-    this.pendingFaceTurn = this.pickFace(event.clientX, event.clientY);
+    this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (this.activePointers.size === 1) {
+      this.activePointerId = event.pointerId;
+      this.pointerDownPos.set(event.clientX, event.clientY);
+      this.lastPointerPos.set(event.clientX, event.clientY);
+      this.didDrag = false;
+      this.pendingFaceTurn = this.pickFace(event.clientX, event.clientY);
+    } else if (this.activePointers.size === 2) {
+      this.activePointerId = null;
+      this.pendingFaceTurn = null;
+      this.didDrag = false;
+      if (this.tapTimeout !== null) {
+        window.clearTimeout(this.tapTimeout);
+        this.tapTimeout = null;
+      }
+      const [a, b] = Array.from(this.activePointers.values());
+      this.lastPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
     this.context.element.setPointerCapture?.(event.pointerId);
   };
 
   private onPointerMove = (event: PointerEvent) => {
-    if (this.activePointerId !== event.pointerId) return;
+    if (!this.activePointers.has(event.pointerId)) return;
     if (this.isTurning || this.isExplodeTransitioning) return;
+
+    this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (this.activePointers.size === 2) {
+      const [a, b] = Array.from(this.activePointers.values());
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+
+      if (this.lastPinchDistance !== null) {
+        const delta = distance - this.lastPinchDistance;
+        const nextScale = THREE.MathUtils.clamp(this.root.scale.x + delta * 0.005, 0.5, 2.5);
+        this.root.scale.setScalar(nextScale);
+      }
+
+      this.lastPinchDistance = distance;
+      this.pendingFaceTurn = null;
+      this.didDrag = false;
+      return;
+    }
+
+    if (this.activePointerId !== event.pointerId) return;
 
     const dx = event.clientX - this.lastPointerPos.x;
     const dy = event.clientY - this.lastPointerPos.y;
@@ -191,7 +231,18 @@ export class RubikModule implements ExperienceModule {
   };
 
   private onPointerUp = (event: PointerEvent) => {
-    if (this.activePointerId !== event.pointerId) return;
+    if (!this.activePointers.has(event.pointerId)) return;
+
+    this.activePointers.delete(event.pointerId);
+    if (this.activePointers.size < 2) {
+      this.lastPinchDistance = null;
+    }
+
+    if (this.activePointers.size > 0) {
+      return;
+    }
+
+    if (this.activePointerId !== null && this.activePointerId !== event.pointerId) return;
 
     this.activePointerId = null;
 
@@ -222,7 +273,11 @@ export class RubikModule implements ExperienceModule {
     }, 250);
   };
 
-  private onPointerCancel = (_event: PointerEvent) => {
+  private onPointerCancel = (event: PointerEvent) => {
+    this.activePointers.delete(event.pointerId);
+    if (this.activePointers.size < 2) {
+      this.lastPinchDistance = null;
+    }
     this.activePointerId = null;
     this.didDrag = false;
     this.pendingFaceTurn = null;
