@@ -17,6 +17,12 @@ export class RubikModule implements ExperienceModule {
   private readonly explodeDurationMs = 400;
   private isShuffled = true;
 
+  private activePointerId: number | null = null;
+  private pointerDownPos = new THREE.Vector2();
+  private lastPointerPos = new THREE.Vector2();
+  private didDrag = false;
+  private lastTap = 0;
+
   private readonly initialTransforms = new Map<string, {
     position: THREE.Vector3;
     quaternion: THREE.Quaternion;
@@ -65,11 +71,17 @@ export class RubikModule implements ExperienceModule {
     this.shuffleInstant(12);
     this.refreshExplodeRegistration();
 
+    context.element.addEventListener("pointerdown", this.onPointerDown);
+    context.element.addEventListener("pointermove", this.onPointerMove);
     context.element.addEventListener("pointerup", this.onPointerUp);
+    context.element.addEventListener("pointercancel", this.onPointerCancel);
   }
 
   unmount(parent: THREE.Object3D): void {
+    this.context.element.removeEventListener("pointerdown", this.onPointerDown);
+    this.context.element.removeEventListener("pointermove", this.onPointerMove);
     this.context.element.removeEventListener("pointerup", this.onPointerUp);
+    this.context.element.removeEventListener("pointercancel", this.onPointerCancel);
     parent.remove(this.root);
     this.root.clear();
     this.initialTransforms.clear();
@@ -112,8 +124,60 @@ export class RubikModule implements ExperienceModule {
     return this.root;
   }
 
+  private onPointerDown = (event: PointerEvent) => {
+    if (this.isTurning || this.isExplodeTransitioning) return;
+
+    this.activePointerId = event.pointerId;
+    this.pointerDownPos.set(event.clientX, event.clientY);
+    this.lastPointerPos.set(event.clientX, event.clientY);
+    this.didDrag = false;
+    this.context.element.setPointerCapture?.(event.pointerId);
+  };
+
+  private onPointerMove = (event: PointerEvent) => {
+    if (this.activePointerId !== event.pointerId) return;
+    if (this.isTurning || this.isExplodeTransitioning) return;
+
+    const dx = event.clientX - this.lastPointerPos.x;
+    const dy = event.clientY - this.lastPointerPos.y;
+    const totalDx = event.clientX - this.pointerDownPos.x;
+    const totalDy = event.clientY - this.pointerDownPos.y;
+
+    if (Math.hypot(totalDx, totalDy) > 6) {
+      this.didDrag = true;
+    }
+
+    if (this.didDrag) {
+      this.root.rotation.y += dx * 0.01;
+      this.root.rotation.x += dy * 0.01;
+      const maxTilt = Math.PI / 3;
+      this.root.rotation.x = THREE.MathUtils.clamp(this.root.rotation.x, -maxTilt, maxTilt);
+    }
+
+    this.lastPointerPos.set(event.clientX, event.clientY);
+  };
+
   private onPointerUp = (event: PointerEvent) => {
-    if (this.isTurning || this.isExplodeTransitioning || this.explode.isExploded()) return;
+    if (this.activePointerId !== event.pointerId) return;
+
+    this.activePointerId = null;
+
+    if (this.isTurning || this.isExplodeTransitioning) return;
+
+    if (this.didDrag) {
+      this.didDrag = false;
+      return;
+    }
+
+    const now = Date.now();
+    if (now - this.lastTap < 300) {
+      this.lastTap = 0;
+      this.onDoubleTap();
+      return;
+    }
+    this.lastTap = now;
+
+    if (this.explode.isExploded()) return;
 
     const rect = this.context.element.getBoundingClientRect();
 
@@ -143,6 +207,11 @@ export class RubikModule implements ExperienceModule {
     }
   };
 
+  private onPointerCancel = (_event: PointerEvent) => {
+    this.activePointerId = null;
+    this.didDrag = false;
+  };
+
   private rotateLayerAnimated(axis: "x" | "y" | "z", index: number, dir: number) {
     this.isTurning = true;
 
@@ -156,12 +225,14 @@ export class RubikModule implements ExperienceModule {
     let progress = 0;
 
     const animate = () => {
-      progress += 0.1;
+      progress = Math.min(progress + 0.1, 1);
       group.rotation[axis] = progress * target;
 
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
+        group.rotation[axis] = target;
+
         selected.forEach((cube) => {
           this.root.attach(cube);
         });
@@ -208,15 +279,16 @@ export class RubikModule implements ExperienceModule {
   }
 
   private snapLayerState(selected: THREE.Object3D[], axis: "x" | "y" | "z", dir: number) {
-    const rotation = new THREE.Matrix4();
-    rotation.makeRotationAxis(
+    const rotationAxis =
       axis === "x"
         ? new THREE.Vector3(1, 0, 0)
         : axis === "y"
           ? new THREE.Vector3(0, 1, 0)
-          : new THREE.Vector3(0, 0, 1),
-      dir * Math.PI / 2
-    );
+          : new THREE.Vector3(0, 0, 1);
+
+    const rotation = new THREE.Matrix4();
+    rotation.makeRotationAxis(rotationAxis, dir * Math.PI / 2);
+    const rotationQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, dir * Math.PI / 2);
 
     for (const cube of selected) {
       const grid = (cube.userData.grid as THREE.Vector3).clone();
@@ -224,6 +296,8 @@ export class RubikModule implements ExperienceModule {
       grid.set(Math.round(grid.x), Math.round(grid.y), Math.round(grid.z));
       cube.userData.grid = grid;
       cube.position.copy(this.gridToWorld(grid));
+      cube.quaternion.premultiply(rotationQuat);
+      cube.quaternion.normalize();
     }
   }
 
