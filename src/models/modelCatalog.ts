@@ -15,7 +15,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     path: "/models/Car.glb",
     previewMode: "fit",
     previewTargetSize: 2.2,
-    placementScale: 100,
+    placementScale: 1,
   },
   {
     id: "disk",
@@ -31,7 +31,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     path: "/models/table.glb",
     previewMode: "fit",
     previewTargetSize: 2,
-    placementScale: 0.01,
+    placementScale: 1,
   },
   {
     id: "cobot",
