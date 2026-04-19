@@ -21,6 +21,7 @@ export class SceneManager {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.physicallyCorrectLights = true;
+    this.renderer.xr.enabled = true;
     container.appendChild(this.renderer.domElement);
 
     this.scene.add(this.anchor.markerRoot);
@@ -82,10 +83,8 @@ export class SceneManager {
   }
 
   start() {
-    const loop = () => {
+    this.renderer.setAnimationLoop(() => {
       this.render();
-      requestAnimationFrame(loop);
-    };
-    loop();
+    });
   }
 }
