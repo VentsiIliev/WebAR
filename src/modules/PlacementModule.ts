@@ -128,8 +128,15 @@ export class PlacementModule implements ExperienceModule {
 
       const placed = this.placement.place(this.root);
       if (placed) {
+        const debugCube = new THREE.Mesh(
+          new THREE.BoxGeometry(0.1, 0.1, 0.1),
+          new THREE.MeshStandardMaterial({ color: 0xff00ff })
+        );
+        debugCube.position.set(0, 0.05, 0);
+        this.root.add(debugCube);
+
         this.model.visible = true;
-        this.setStatus("Model placed.");
+        this.setStatus("Model placed. Magenta debug cube added.");
       } else {
         this.setStatus("Reticle not ready. Move phone until it locks onto a surface.");
       }
