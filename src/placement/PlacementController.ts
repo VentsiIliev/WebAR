@@ -94,8 +94,8 @@ export class PlacementController {
     this.reticle.updateMatrix();
   }
 
-  place(target: THREE.Object3D) {
-    if (!this.reticle.visible) return;
+  place(target: THREE.Object3D): boolean {
+    if (!this.reticle.visible) return false;
 
     const position = new THREE.Vector3();
     const quaternion = new THREE.Quaternion();
@@ -106,6 +106,7 @@ export class PlacementController {
     target.quaternion.copy(quaternion);
     this.placed = true;
     this.reticle.visible = false;
+    return true;
   }
 
   isPlaced(): boolean {
