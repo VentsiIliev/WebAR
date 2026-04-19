@@ -2,11 +2,9 @@ export interface ModelOption {
   id: string;
   label: string;
   path: string;
-  // Desktop / generic preview behavior
   previewMode?: "fit" | "fixed";
   previewScale?: number;
   previewTargetSize?: number;
-  // AR / WebXR placement scale, where 1 unit = 1 meter
   placementScale?: number;
 }
 
@@ -17,7 +15,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     path: "/models/Car.glb",
     previewMode: "fit",
     previewTargetSize: 2.2,
-    placementScale: 1,
+    placementScale: 0.01,
   },
   {
     id: "disk",
@@ -25,7 +23,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     path: "/models/disk.glb",
     previewMode: "fit",
     previewTargetSize: 1.4,
-    placementScale: 1,
+    placementScale: 0.2,
   },
   {
     id: "cobot",
@@ -33,7 +31,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     path: "/models/cobot.glb",
     previewMode: "fit",
     previewTargetSize: 2,
-    placementScale: 1,
+    placementScale: 0.01,
   },
   {
     id: "brainstem",
@@ -41,6 +39,6 @@ export const MODEL_CATALOG: ModelOption[] = [
     path: "/models/BrainStem.glb",
     previewMode: "fit",
     previewTargetSize: 1.4,
-    placementScale: 1,
+    placementScale: 0.2,
   },
 ];
