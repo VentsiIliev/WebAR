@@ -16,11 +16,12 @@ export class App {
 
   private mode: ExperienceMode = "rubik";
   private selectedModel: ModelOption = MODEL_CATALOG[0];
-
   private isSwitching = false;
+  private videoEl?: HTMLVideoElement;
 
   async start(container: HTMLElement) {
     const video = await this.cameraManager.start();
+    this.videoEl = video;
     container.appendChild(video);
 
     this.scene = new SceneManager(container);
@@ -42,7 +43,7 @@ export class App {
     });
 
     select.onchange = () => {
-      const found = MODEL_CATALOG.find(m => m.id === select.value);
+      const found = MODEL_CATALOG.find((m) => m.id === select.value);
       if (found) {
         this.selectedModel = found;
         this.setMode(this.mode, container);
@@ -66,11 +67,24 @@ export class App {
     arBtn.style.zIndex = "1000";
 
     arBtn.onclick = () => {
-      const event = new Event("start-ar");
-      container.dispatchEvent(event);
+      if (this.mode !== "placement") return;
+
+      this.tracker.stop();
+
+      if (this.videoEl?.srcObject) {
+        const stream = this.videoEl.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        this.videoEl.srcObject = null;
+      }
+
+      if (this.videoEl) {
+        this.videoEl.style.display = "none";
+      }
+
+      container.dispatchEvent(new Event("start-ar"));
     };
 
-    switchBtn.onclick = () => {
+    switchBtn.onclick = async () => {
       if (this.isSwitching) return;
       this.isSwitching = true;
 
@@ -79,7 +93,17 @@ export class App {
       else this.mode = "rubik";
 
       this.setMode(this.mode, container);
-      setTimeout(() => this.isSwitching = false, 300);
+
+      if (this.mode !== "placement" && (!this.videoEl || !this.videoEl.srcObject)) {
+        const newVideo = await this.cameraManager.start();
+        this.videoEl = newVideo;
+        container.insertBefore(newVideo, container.firstChild);
+        await this.tracker.start();
+      }
+
+      setTimeout(() => {
+        this.isSwitching = false;
+      }, 300);
     };
 
     container.appendChild(switchBtn);
@@ -96,7 +120,6 @@ export class App {
     this.gestures.detach();
 
     let module;
-
     if (mode === "rubik") module = new RubikModule();
     else if (mode === "model") module = new GenericModelModule(this.selectedModel);
     else module = new PlacementModule(this.selectedModel);
