@@ -16,6 +16,8 @@ export class PlacementController {
   private onSelectStart?: () => void;
   private onSelectEnd?: () => void;
 
+  private time = 0;
+
   mount(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
     scene.add(this.reticle);
@@ -53,15 +55,9 @@ export class PlacementController {
       this.hitTestSource = await this.session.requestHitTestSource({ space: this.viewerSpace });
       this.xrActive = true;
 
-      this.session.addEventListener("select", () => {
-        this.onSelect?.();
-      });
-      this.session.addEventListener("selectstart", () => {
-        this.onSelectStart?.();
-      });
-      this.session.addEventListener("selectend", () => {
-        this.onSelectEnd?.();
-      });
+      this.session.addEventListener("select", () => this.onSelect?.());
+      this.session.addEventListener("selectstart", () => this.onSelectStart?.());
+      this.session.addEventListener("selectend", () => this.onSelectEnd?.());
 
       this.session.addEventListener("end", () => {
         this.xrActive = false;
@@ -73,8 +69,7 @@ export class PlacementController {
       });
 
       return { ok: true };
-    } catch (error) {
-      console.error("Failed to start AR session", error);
+    } catch {
       return { ok: false, reason: "Failed to start AR session" };
     }
   }
@@ -91,6 +86,26 @@ export class PlacementController {
   }
 
   update(camera: THREE.Camera) {
+    this.time += 0.016;
+
+    const halo = this.reticle.getObjectByName("reticle-halo") as THREE.Mesh;
+    const beacon = this.reticle.getObjectByName("reticle-beacon") as THREE.Mesh;
+    const beaconTop = this.reticle.getObjectByName("reticle-beacon-top") as THREE.Mesh;
+
+    if (halo) {
+      const s = 1 + Math.sin(this.time * 2) * 0.1;
+      halo.scale.set(s, s, s);
+      (halo.material as THREE.MeshBasicMaterial).opacity = 0.25 + Math.sin(this.time * 2) * 0.15;
+    }
+
+    if (beacon) {
+      beacon.position.y = 0.08 + Math.sin(this.time * 2.5) * 0.02;
+    }
+
+    if (beaconTop) {
+      beaconTop.position.y = 0.16 + Math.sin(this.time * 2.5) * 0.03;
+    }
+
     if (this.xrActive && this.renderer && this.refSpace && this.hitTestSource) {
       const frame = this.renderer.xr.getFrame?.();
       if (!frame) return;
