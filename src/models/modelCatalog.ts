@@ -26,6 +26,14 @@ export const MODEL_CATALOG: ModelOption[] = [
     placementScale: 0.2,
   },
   {
+    id: "table",
+    label: "Table",
+    path: "/models/table.glb",
+    previewMode: "fit",
+    previewTargetSize: 2,
+    placementScale: 0.01,
+  },
+  {
     id: "cobot",
     label: "Cobot",
     path: "/models/cobot.glb",
