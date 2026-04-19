@@ -10,58 +10,88 @@ export class PlacementController {
   private viewerSpace: XRReferenceSpace | null = null;
   private hitTestSource: XRHitTestSource | null = null;
 
-  private scene?: THREE.Scene;
   private renderer?: THREE.WebGLRenderer;
+  private xrActive = false;
 
-  async mount(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
-    this.scene = scene;
+  mount(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
-
     scene.add(this.reticle);
+  }
 
-    if (!navigator.xr) return;
+  async startAR(): Promise<{ ok: boolean; reason?: string }> {
+    if (!this.renderer) return { ok: false, reason: "Renderer not ready" };
+    if (!navigator.xr) return { ok: false, reason: "WebXR not available" };
 
     const supported = await navigator.xr.isSessionSupported("immersive-ar");
-    if (!supported) return;
+    if (!supported) return { ok: false, reason: "immersive-ar not supported" };
 
-    this.session = await navigator.xr.requestSession("immersive-ar", {
-      requiredFeatures: ["hit-test", "local-floor"],
-    });
+    try {
+      this.session = await navigator.xr.requestSession("immersive-ar", {
+        requiredFeatures: ["hit-test", "local-floor"],
+      });
 
-    renderer.xr.enabled = true;
-    await renderer.xr.setSession(this.session);
+      this.renderer.xr.enabled = true;
+      await this.renderer.xr.setSession(this.session);
 
-    this.viewerSpace = await this.session.requestReferenceSpace("viewer");
-    this.refSpace = await this.session.requestReferenceSpace("local-floor");
+      this.viewerSpace = await this.session.requestReferenceSpace("viewer");
+      this.refSpace = await this.session.requestReferenceSpace("local-floor");
+      this.hitTestSource = await this.session.requestHitTestSource({ space: this.viewerSpace });
+      this.xrActive = true;
 
-    this.hitTestSource = await this.session.requestHitTestSource({
-      space: this.viewerSpace,
-    });
+      this.session.addEventListener("end", () => {
+        this.xrActive = false;
+        this.hitTestSource?.cancel();
+        this.hitTestSource = null;
+        this.viewerSpace = null;
+        this.refSpace = null;
+        this.session = null;
+      });
+
+      return { ok: true };
+    } catch (error) {
+      console.error("Failed to start AR session", error);
+      return { ok: false, reason: "Failed to start AR session" };
+    }
   }
 
   unmount(scene: THREE.Scene) {
     scene.remove(this.reticle);
     this.hitTestSource?.cancel();
     this.session?.end();
+    this.session = null;
+    this.hitTestSource = null;
+    this.viewerSpace = null;
+    this.refSpace = null;
+    this.xrActive = false;
   }
 
-  update() {
-    if (this.placed || !this.renderer || !this.refSpace || !this.hitTestSource) return;
+  update(camera: THREE.Camera) {
+    if (this.placed) return;
 
-    const frame = this.renderer.xr.getFrame?.();
-    if (!frame) return;
+    if (this.xrActive && this.renderer && this.refSpace && this.hitTestSource) {
+      const frame = this.renderer.xr.getFrame?.();
+      if (!frame) return;
 
-    const hits = frame.getHitTestResults(this.hitTestSource);
-
-    if (hits.length > 0) {
-      const pose = hits[0].getPose(this.refSpace);
-      if (pose) {
-        this.reticle.visible = true;
-        this.reticle.matrix.fromArray(pose.transform.matrix);
+      const hits = frame.getHitTestResults(this.hitTestSource);
+      if (hits.length > 0) {
+        const pose = hits[0].getPose(this.refSpace);
+        if (pose) {
+          this.reticle.visible = true;
+          this.reticle.matrix.fromArray(pose.transform.matrix);
+          return;
+        }
       }
-    } else {
+
       this.reticle.visible = false;
+      return;
     }
+
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const position = camera.position.clone().add(forward.multiplyScalar(1));
+    this.reticle.visible = true;
+    this.reticle.position.copy(position);
+    this.reticle.quaternion.copy(camera.quaternion);
+    this.reticle.updateMatrix();
   }
 
   place(target: THREE.Object3D) {
@@ -70,17 +100,19 @@ export class PlacementController {
     const position = new THREE.Vector3();
     const quaternion = new THREE.Quaternion();
     const scale = new THREE.Vector3();
-
     this.reticle.matrix.decompose(position, quaternion, scale);
 
     target.position.copy(position);
     target.quaternion.copy(quaternion);
-
     this.placed = true;
     this.reticle.visible = false;
   }
 
   isPlaced(): boolean {
     return this.placed;
+  }
+
+  isXRRunning(): boolean {
+    return this.xrActive;
   }
 }
