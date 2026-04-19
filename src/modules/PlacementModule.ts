@@ -27,6 +27,9 @@ export class PlacementModule implements ExperienceModule {
     this.setStatus(`Loading ${this.selectedModel.label}...`);
 
     this.placement.mount(context.scene, context.renderer);
+    this.placement.setSelectHandler(() => {
+      this.tryPlace();
+    });
 
     this.loader.load(
       this.selectedModel.path,
@@ -113,33 +116,7 @@ export class PlacementModule implements ExperienceModule {
     context.element.addEventListener("start-ar", this.startArHandler);
 
     this.clickHandler = () => {
-      if (!this.canPlace) {
-        this.setStatus("Wait for AR to stabilize before tapping.");
-        return;
-      }
-      if (!this.model) {
-        this.setStatus("Model is not loaded yet.");
-        return;
-      }
-      if (this.placement.isPlaced()) {
-        this.setStatus("Model already placed.");
-        return;
-      }
-
-      const placed = this.placement.place(this.root);
-      if (placed) {
-        const debugCube = new THREE.Mesh(
-          new THREE.BoxGeometry(0.1, 0.1, 0.1),
-          new THREE.MeshStandardMaterial({ color: 0xff00ff })
-        );
-        debugCube.position.set(0, 0.05, 0);
-        this.root.add(debugCube);
-
-        this.model.visible = true;
-        this.setStatus("Model placed. Magenta debug cube added.");
-      } else {
-        this.setStatus("Reticle not ready. Move phone until it locks onto a surface.");
-      }
+      this.tryPlace();
     };
 
     context.element.addEventListener("click", this.clickHandler);
@@ -173,6 +150,36 @@ export class PlacementModule implements ExperienceModule {
 
   getGestureTarget(): THREE.Object3D {
     return this.root;
+  }
+
+  private tryPlace() {
+    if (!this.canPlace) {
+      this.setStatus("Wait for AR to stabilize before tapping.");
+      return;
+    }
+    if (!this.model) {
+      this.setStatus("Model is not loaded yet.");
+      return;
+    }
+    if (this.placement.isPlaced()) {
+      this.setStatus("Model already placed.");
+      return;
+    }
+
+    const placed = this.placement.place(this.root);
+    if (placed) {
+      const debugCube = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.1, 0.1),
+        new THREE.MeshStandardMaterial({ color: 0xff00ff })
+      );
+      debugCube.position.set(0, 0.05, 0);
+      this.root.add(debugCube);
+
+      this.model.visible = true;
+      this.setStatus("Model placed. Magenta debug cube added.");
+    } else {
+      this.setStatus("Reticle not ready. Move phone until it locks onto a surface.");
+    }
   }
 
   private createStatusOverlay(element: HTMLElement) {
