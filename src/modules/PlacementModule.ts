@@ -16,13 +16,7 @@ export class PlacementModule implements ExperienceModule {
   private statusEl?: HTMLDivElement;
 
   private mode: "move" | "rotate" | "scale" = "move";
-  private manipulating = false;
-  private selectStartTime = 0;
-
-  private startYaw = 0;
-  private startRotationY = 0;
-  private startDistance = 0;
-  private startScale = 1;
+  private scaleUp = true;
 
   constructor(private selectedModel: ModelOption) {}
 
@@ -36,37 +30,22 @@ export class PlacementModule implements ExperienceModule {
     this.placement.mount(context.scene, context.renderer);
 
     this.placement.setSelectHandler(() => {
-      const duration = performance.now() - this.selectStartTime;
-
       if (!this.placement.isPlaced()) {
         this.tryPlace();
-      } else if (duration < 200) {
-        this.cycleMode();
+        return;
       }
-    });
 
-    this.placement.setSelectStartHandler(() => {
-      this.selectStartTime = performance.now();
-
-      if (!this.placement.isPlaced() || !this.context) return;
-
-      this.manipulating = true;
-
-      const camera = this.context.camera;
-      const pos = new THREE.Vector3();
-      this.placement.getReticlePose(pos);
-
-      if (this.mode === "rotate") {
-        this.startYaw = this.getYaw(camera.quaternion);
-        this.startRotationY = this.root.rotation.y;
-      } else if (this.mode === "scale") {
-        this.startDistance = camera.position.distanceTo(pos);
-        this.startScale = this.root.scale.x;
+      if (this.mode === "move") {
+        this.moveToReticle();
+      } else if (this.mode === "rotate") {
+        this.root.rotation.y += Math.PI / 12;
+        this.setStatus("Rotate +15°");
+      } else {
+        const factor = this.scaleUp ? 1.15 : 1 / 1.15;
+        this.root.scale.setScalar(THREE.MathUtils.clamp(this.root.scale.x * factor, 0.25, 4));
+        this.scaleUp = !this.scaleUp;
+        this.setStatus("Scale step");
       }
-    });
-
-    this.placement.setSelectEndHandler(() => {
-      this.manipulating = false;
     });
 
     this.loader.load(this.selectedModel.path, (gltf) => {
@@ -86,7 +65,7 @@ export class PlacementModule implements ExperienceModule {
       this.model.visible = false;
       this.root.add(this.model);
 
-      this.setStatus("Tap to place. After: tap to switch mode, hold to manipulate.");
+      this.setStatus("Tap to place. Double tap to change mode.");
     });
 
     this.startArHandler = async () => {
@@ -102,24 +81,18 @@ export class PlacementModule implements ExperienceModule {
 
   update(): void {
     if (!this.context) return;
-
     this.placement.update(this.context.camera);
+  }
 
-    if (!this.manipulating || !this.placement.isPlaced()) return;
+  onDoubleTap(): void {
+    if (!this.placement.isPlaced()) return;
 
-    const pos = new THREE.Vector3();
-    if (!this.placement.getReticlePose(pos)) return;
+    this.mode = this.mode === "move" ? "rotate" : this.mode === "rotate" ? "scale" : "move";
+    this.setStatus(`Mode: ${this.mode}`);
+  }
 
-    if (this.mode === "move") {
-      this.root.position.copy(pos);
-    } else if (this.mode === "rotate") {
-      const yaw = this.getYaw(this.context.camera.quaternion);
-      this.root.rotation.y = this.startRotationY + (yaw - this.startYaw);
-    } else if (this.mode === "scale") {
-      const dist = this.context.camera.position.distanceTo(pos);
-      const factor = dist / this.startDistance;
-      this.root.scale.setScalar(THREE.MathUtils.clamp(this.startScale * factor, 0.2, 5));
-    }
+  getGestureTarget(): THREE.Object3D {
+    return this.root;
   }
 
   private tryPlace() {
@@ -128,14 +101,12 @@ export class PlacementModule implements ExperienceModule {
     if (placed) this.model.visible = true;
   }
 
-  private cycleMode() {
-    this.mode = this.mode === "move" ? "rotate" : this.mode === "rotate" ? "scale" : "move";
-    this.setStatus(`Mode: ${this.mode}`);
-  }
-
-  private getYaw(q: THREE.Quaternion): number {
-    const e = new THREE.Euler().setFromQuaternion(q, "YXZ");
-    return e.y;
+  private moveToReticle() {
+    const pos = new THREE.Vector3();
+    const ok = this.placement.getReticlePose(pos);
+    if (!ok) return;
+    this.root.position.copy(pos);
+    this.setStatus("Moved");
   }
 
   private createStatusOverlay(el: HTMLElement) {
