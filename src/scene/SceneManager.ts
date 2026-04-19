@@ -48,6 +48,8 @@ export class SceneManager {
     const context: ExperienceModuleContext = {
       element: this.container,
       camera: this.camera,
+      scene: this.scene,
+      renderer: this.renderer,
     };
 
     this.module.mount(this.anchor.userGroup, context);
