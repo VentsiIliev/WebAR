@@ -74,7 +74,8 @@ export class PlacementModule implements ExperienceModule {
         }
 
         const scale = this.selectedModel.placementScale ?? 1;
-        this.model.scale.setScalar(scale);
+        // Temporary visibility boost for AR debugging.
+        this.model.scale.setScalar(scale * 10);
         this.model.updateWorldMatrix(true, true);
 
         const scaledBox = new THREE.Box3().setFromObject(this.model);
@@ -83,6 +84,10 @@ export class PlacementModule implements ExperienceModule {
 
         this.model.position.sub(scaledCenter);
         this.model.position.y -= minY;
+
+        const helper = new THREE.Box3Helper(new THREE.Box3().setFromObject(this.model), 0xffff00);
+        helper.visible = true;
+        this.model.add(helper);
 
         this.model.visible = false;
         this.root.add(this.model);
