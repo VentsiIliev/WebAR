@@ -12,6 +12,7 @@ export class PlacementModule implements ExperienceModule {
   private loader = new GLTFLoader();
   private model?: THREE.Object3D;
   private context?: ExperienceModuleContext;
+  private canPlace = false;
 
   constructor(private selectedModel: ModelOption) {}
 
@@ -29,18 +30,26 @@ export class PlacementModule implements ExperienceModule {
       this.root.add(this.model);
     });
 
-    // Listen for explicit AR start event
     context.element.addEventListener("start-ar", async () => {
       const result = await this.placement.startAR();
       if (!result.ok) {
         alert(result.reason || "AR failed to start");
+        return;
       }
+
+      this.canPlace = false;
+      window.setTimeout(() => {
+        this.canPlace = true;
+      }, 500);
     });
 
     context.element.addEventListener("click", () => {
+      if (!this.canPlace) return;
       if (!this.placement.isPlaced() && this.model) {
-        this.placement.place(this.root);
-        this.model.visible = true;
+        const placed = this.placement.place(this.root);
+        if (placed) {
+          this.model.visible = true;
+        }
       }
     });
   }
