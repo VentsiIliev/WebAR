@@ -1,10 +1,12 @@
 import * as THREE from "three";
 
-export type ExperienceMode = "rubik" | "model";
+export type ExperienceMode = "rubik" | "model" | "placement";
 
 export interface ExperienceModuleContext {
   element: HTMLElement;
   camera: THREE.Camera;
+  scene: THREE.Scene;
+  renderer: THREE.WebGLRenderer;
 }
 
 export interface ExperienceModule {
