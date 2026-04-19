@@ -14,6 +14,8 @@ export class PlacementModule implements ExperienceModule {
   private context?: ExperienceModuleContext;
   private canPlace = false;
   private statusEl?: HTMLDivElement;
+  private modeBtn?: HTMLButtonElement;
+  private startArHandler?: () => void;
 
   private mode: "move" | "rotate" | "scale" = "move";
   private scaleUp = true;
@@ -25,6 +27,8 @@ export class PlacementModule implements ExperienceModule {
     parent.add(this.root);
 
     this.createStatusOverlay(context.element);
+    this.createModeButton(context.element);
+    this.updateModeButton();
     this.setStatus("Loading table…");
 
     this.placement.mount(context.scene, context.renderer);
@@ -80,7 +84,7 @@ export class PlacementModule implements ExperienceModule {
       this.setStatus("Move your phone slowly until the keyring appears, then tap the keyring to place the table.");
       setTimeout(() => {
         this.canPlace = true;
-        this.setStatus("Keyring ready: tap the keyring to place the table.");
+        this.setStatus(`Keyring ready: tap the keyring to place the table. Current mode: ${this.mode.toUpperCase()}.`);
       }, 500);
     };
 
@@ -94,9 +98,7 @@ export class PlacementModule implements ExperienceModule {
 
   onDoubleTap(): void {
     if (!this.placement.isPlaced()) return;
-
-    this.mode = this.mode === "move" ? "rotate" : this.mode === "rotate" ? "scale" : "move";
-    this.setStatus(`Mode: ${this.mode.toUpperCase()}. Double tap to change mode again.`);
+    this.cycleMode();
   }
 
   getGestureTarget(): THREE.Object3D {
@@ -111,7 +113,8 @@ export class PlacementModule implements ExperienceModule {
     const placed = this.placement.place(this.root);
     if (placed) {
       this.model.visible = true;
-      this.setStatus("Table placed. Tap to use the current mode. Double tap to switch mode.");
+      this.updateModeButton();
+      this.setStatus(`Table placed. Current mode: ${this.mode.toUpperCase()}. Tap mode button to change.`);
     } else {
       this.setStatus("No valid keyring yet. Move your phone until the keyring locks onto a surface, then tap it.");
     }
@@ -126,6 +129,12 @@ export class PlacementModule implements ExperienceModule {
     }
     this.root.position.copy(pos);
     this.setStatus("Move mode: table moved to the keyring.");
+  }
+
+  private cycleMode() {
+    this.mode = this.mode === "move" ? "rotate" : this.mode === "rotate" ? "scale" : "move";
+    this.updateModeButton();
+    this.setStatus(`Mode: ${this.mode.toUpperCase()}. Tap the screen to use this mode.`);
   }
 
   private createStatusOverlay(el: HTMLElement) {
@@ -146,6 +155,32 @@ export class PlacementModule implements ExperienceModule {
     this.statusEl.style.boxShadow = "0 8px 24px rgba(0,0,0,0.28)";
     this.statusEl.style.pointerEvents = "none";
     el.appendChild(this.statusEl);
+  }
+
+  private createModeButton(el: HTMLElement) {
+    this.modeBtn = document.createElement("button");
+    this.modeBtn.style.position = "absolute";
+    this.modeBtn.style.top = "20px";
+    this.modeBtn.style.right = "20px";
+    this.modeBtn.style.zIndex = "1000";
+    this.modeBtn.style.padding = "12px 16px";
+    this.modeBtn.style.borderRadius = "14px";
+    this.modeBtn.style.border = "1px solid rgba(255,255,255,0.18)";
+    this.modeBtn.style.background = "rgba(14, 16, 30, 0.82)";
+    this.modeBtn.style.backdropFilter = "blur(10px)";
+    this.modeBtn.style.color = "white";
+    this.modeBtn.style.fontSize = "14px";
+    this.modeBtn.style.fontWeight = "600";
+    this.modeBtn.style.boxShadow = "0 8px 24px rgba(0,0,0,0.28)";
+    this.modeBtn.onclick = () => {
+      this.cycleMode();
+    };
+    el.appendChild(this.modeBtn);
+  }
+
+  private updateModeButton() {
+    if (!this.modeBtn) return;
+    this.modeBtn.textContent = `Mode: ${this.mode.toUpperCase()}`;
   }
 
   private setStatus(msg: string) {
