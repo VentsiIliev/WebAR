@@ -11,17 +11,20 @@ export class PlacementModule implements ExperienceModule {
   private placement = new PlacementController();
   private loader = new GLTFLoader();
   private model?: THREE.Object3D;
+  private context?: ExperienceModuleContext;
 
   constructor(private selectedModel: ModelOption) {}
 
-  mount(parent: THREE.Object3D, context: ExperienceModuleContext): void {
+  async mount(parent: THREE.Object3D, context: ExperienceModuleContext): Promise<void> {
+    this.context = context;
+
     parent.add(this.root);
-    this.placement.mount(context.scene);
+
+    await this.placement.mount(context.scene, context.renderer);
 
     this.loader.load(this.selectedModel.path, (gltf) => {
       this.model = gltf.scene;
 
-      // REAL SCALE for AR
       const scale = this.selectedModel.placementScale ?? 1;
       this.model.scale.setScalar(scale);
 
@@ -38,13 +41,16 @@ export class PlacementModule implements ExperienceModule {
   }
 
   unmount(parent: THREE.Object3D): void {
-    this.placement.unmount(parent as THREE.Scene);
+    if (this.context) {
+      this.placement.unmount(this.context.scene);
+    }
+
     parent.remove(this.root);
     this.root.clear();
   }
 
   update(): void {
-    // reticle update handled in controller
+    this.placement.update();
   }
 
   onDoubleTap(): void {}
