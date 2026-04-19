@@ -4,6 +4,7 @@ import { SceneManager } from "../scene/SceneManager";
 import { GestureController } from "../interaction/GestureController";
 import { RubikModule } from "../modules/RubikModule";
 import { GenericModelModule } from "../modules/GenericModelModule";
+import { MODEL_CATALOG, ModelOption } from "../models/modelCatalog";
 import type { ExperienceMode } from "../modules/ExperienceModule";
 
 export class App {
@@ -13,6 +14,8 @@ export class App {
   private gestures = new GestureController();
 
   private mode: ExperienceMode = "rubik";
+  private selectedModel: ModelOption = MODEL_CATALOG[0];
+
   private lastTap = 0;
   private isSwitching = false;
   private activePointerIds = new Set<number>();
@@ -26,6 +29,34 @@ export class App {
 
     this.setMode(this.mode, container);
 
+    // MODEL PICKER
+    const select = document.createElement("select");
+    select.style.position = "absolute";
+    select.style.top = "60px";
+    select.style.left = "20px";
+    select.style.zIndex = "10";
+
+    MODEL_CATALOG.forEach((model) => {
+      const option = document.createElement("option");
+      option.value = model.id;
+      option.text = model.label;
+      select.appendChild(option);
+    });
+
+    select.onchange = () => {
+      const found = MODEL_CATALOG.find(m => m.id === select.value);
+      if (found) {
+        this.selectedModel = found;
+        console.log("Model switched to", found);
+
+        if (this.mode === "model") {
+          this.setMode("model", container);
+        }
+      }
+    };
+
+    container.appendChild(select);
+
     container.addEventListener("pointerdown", (event) => {
       if (this.mode !== "model") return;
 
@@ -33,9 +64,7 @@ export class App {
         this.activePointerIds.add(event.pointerId);
       }
 
-      if (this.activePointerIds.size > 1) {
-        return; // Ignore pinch/zoom touch gestures for double-tap detection
-      }
+      if (this.activePointerIds.size > 1) return;
 
       const now = Date.now();
       if (now - this.lastTap < 300) {
@@ -64,13 +93,12 @@ export class App {
     button.style.zIndex = "10";
 
     button.onclick = () => {
-      if (this.isSwitching) return;  // Prevent rapid switching
-      
+      if (this.isSwitching) return;
+
       this.isSwitching = true;
       this.mode = this.mode === "rubik" ? "model" : "rubik";
       this.setMode(this.mode, container);
-      
-      // Re-enable switching after a brief delay
+
       setTimeout(() => {
         this.isSwitching = false;
       }, 300);
@@ -84,7 +112,6 @@ export class App {
 
     await this.tracker.start();
 
-    // Desktop testing: emit fake poses to simulate marker tracking
     setInterval(() => {
       this.tracker.emitPose({
         position: [0, 0, -1],
@@ -95,18 +122,17 @@ export class App {
   }
 
   private setMode(mode: ExperienceMode, container: HTMLElement) {
-    console.log("Switching mode from", this.mode, "to", mode);
+    console.log("Switching mode to", mode);
     this.gestures.detach();
 
     const module = mode === "rubik"
       ? new RubikModule()
-      : new GenericModelModule("/models/BrainStem.glb");
+      : new GenericModelModule(this.selectedModel.path);
 
     this.scene.setModule(module);
 
     if (mode === "model") {
       this.gestures.attach(this.scene.getGestureTarget(), container);
     }
-    console.log("Mode switched successfully to", mode);
   }
 }
