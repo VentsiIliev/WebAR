@@ -33,6 +33,13 @@ export class App {
     select.style.position = "absolute";
     select.style.top = "60px";
     select.style.left = "20px";
+    select.style.zIndex = "1000";
+    select.style.padding = "8px 10px";
+    select.style.borderRadius = "8px";
+    select.style.border = "1px solid rgba(255,255,255,0.3)";
+    select.style.background = "rgba(20,20,20,0.85)";
+    select.style.color = "white";
+    select.style.fontSize = "14px";
 
     MODEL_CATALOG.forEach((model) => {
       const option = document.createElement("option");
@@ -41,8 +48,10 @@ export class App {
       select.appendChild(option);
     });
 
+    select.value = this.selectedModel.id;
+
     select.onchange = () => {
-      const found = MODEL_CATALOG.find(m => m.id === select.value);
+      const found = MODEL_CATALOG.find((m) => m.id === select.value);
       if (found) {
         this.selectedModel = found;
         this.setMode(this.mode, container);
@@ -56,6 +65,14 @@ export class App {
     button.style.position = "absolute";
     button.style.top = "20px";
     button.style.left = "20px";
+    button.style.zIndex = "1000";
+    button.style.padding = "10px 14px";
+    button.style.borderRadius = "8px";
+    button.style.border = "1px solid rgba(255,255,255,0.3)";
+    button.style.background = "rgba(20,20,20,0.85)";
+    button.style.color = "white";
+    button.style.fontSize = "14px";
+    button.style.cursor = "pointer";
 
     button.onclick = () => {
       if (this.isSwitching) return;
@@ -68,7 +85,7 @@ export class App {
 
       this.setMode(this.mode, container);
 
-      setTimeout(() => this.isSwitching = false, 300);
+      setTimeout(() => (this.isSwitching = false), 300);
     };
 
     container.appendChild(button);
