@@ -75,7 +75,7 @@ export class PlacementModule implements ExperienceModule {
 
         const scale = this.selectedModel.placementScale ?? 1;
         // Temporary visibility boost for AR debugging.
-        this.model.scale.setScalar(scale * 10);
+        this.model.scale.setScalar(scale);
         this.model.updateWorldMatrix(true, true);
 
         const scaledBox = new THREE.Box3().setFromObject(this.model);
@@ -173,12 +173,7 @@ export class PlacementModule implements ExperienceModule {
 
     const placed = this.placement.place(this.root);
     if (placed) {
-      const debugCube = new THREE.Mesh(
-        new THREE.BoxGeometry(0.1, 0.1, 0.1),
-        new THREE.MeshStandardMaterial({ color: 0xff00ff })
-      );
-      debugCube.position.set(0, 0.05, 0);
-      this.root.add(debugCube);
+    
 
       this.model.visible = true;
       this.setStatus("Model placed. Magenta debug cube added.");
