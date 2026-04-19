@@ -24,8 +24,54 @@ export class PlacementModule implements ExperienceModule {
 
     this.loader.load(this.selectedModel.path, (gltf) => {
       this.model = gltf.scene;
+
+      let meshCount = 0;
+      this.model.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          meshCount++;
+          child.frustumCulled = false;
+
+          const applyMaterial = (material: THREE.Material) => {
+            material.side = THREE.DoubleSide;
+            material.needsUpdate = true;
+          };
+
+          if (Array.isArray(child.material)) {
+            child.material.forEach(applyMaterial);
+          } else {
+            applyMaterial(child.material);
+          }
+        }
+      });
+
+      if (meshCount === 0) {
+        console.warn("Placed GLB has no meshes");
+        return;
+      }
+
+      this.model.updateWorldMatrix(true, true);
+      const box = new THREE.Box3().setFromObject(this.model);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+
+      const maxDim = Math.max(size.x, size.y, size.z);
+      if (!Number.isFinite(maxDim) || maxDim <= 0) {
+        console.warn("Placed GLB has invalid bounds");
+        return;
+      }
+
       const scale = this.selectedModel.placementScale ?? 1;
       this.model.scale.setScalar(scale);
+      this.model.updateWorldMatrix(true, true);
+
+      const scaledBox = new THREE.Box3().setFromObject(this.model);
+      const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+      const minY = scaledBox.min.y;
+
+      // Center horizontally and rest model on detected surface instead of cutting through it.
+      this.model.position.sub(scaledCenter);
+      this.model.position.y -= minY;
+
       this.model.visible = false;
       this.root.add(this.model);
     });
