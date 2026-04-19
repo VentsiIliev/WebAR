@@ -13,6 +13,8 @@ export class PlacementController {
   private renderer?: THREE.WebGLRenderer;
   private xrActive = false;
   private onSelect?: () => void;
+  private onSelectStart?: () => void;
+  private onSelectEnd?: () => void;
 
   mount(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
@@ -21,6 +23,14 @@ export class PlacementController {
 
   setSelectHandler(handler: () => void) {
     this.onSelect = handler;
+  }
+
+  setSelectStartHandler(handler: () => void) {
+    this.onSelectStart = handler;
+  }
+
+  setSelectEndHandler(handler: () => void) {
+    this.onSelectEnd = handler;
   }
 
   async startAR(): Promise<{ ok: boolean; reason?: string }> {
@@ -43,9 +53,14 @@ export class PlacementController {
       this.hitTestSource = await this.session.requestHitTestSource({ space: this.viewerSpace });
       this.xrActive = true;
 
-      // 🔥 IMPORTANT: handle tap inside immersive AR
       this.session.addEventListener("select", () => {
         this.onSelect?.();
+      });
+      this.session.addEventListener("selectstart", () => {
+        this.onSelectStart?.();
+      });
+      this.session.addEventListener("selectend", () => {
+        this.onSelectEnd?.();
       });
 
       this.session.addEventListener("end", () => {
@@ -76,8 +91,6 @@ export class PlacementController {
   }
 
   update(camera: THREE.Camera) {
-    if (this.placed) return;
-
     if (this.xrActive && this.renderer && this.refSpace && this.hitTestSource) {
       const frame = this.renderer.xr.getFrame?.();
       if (!frame) return;
@@ -115,7 +128,13 @@ export class PlacementController {
     target.position.copy(position);
     target.quaternion.copy(quaternion);
     this.placed = true;
-    this.reticle.visible = false;
+    return true;
+  }
+
+  getReticlePose(position: THREE.Vector3, quaternion?: THREE.Quaternion): boolean {
+    if (!this.reticle.visible) return false;
+    const scale = new THREE.Vector3();
+    this.reticle.matrix.decompose(position, quaternion ?? new THREE.Quaternion(), scale);
     return true;
   }
 
