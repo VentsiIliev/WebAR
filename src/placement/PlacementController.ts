@@ -12,10 +12,15 @@ export class PlacementController {
 
   private renderer?: THREE.WebGLRenderer;
   private xrActive = false;
+  private onSelect?: () => void;
 
   mount(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
     scene.add(this.reticle);
+  }
+
+  setSelectHandler(handler: () => void) {
+    this.onSelect = handler;
   }
 
   async startAR(): Promise<{ ok: boolean; reason?: string }> {
@@ -37,6 +42,11 @@ export class PlacementController {
       this.refSpace = await this.session.requestReferenceSpace("local-floor");
       this.hitTestSource = await this.session.requestHitTestSource({ space: this.viewerSpace });
       this.xrActive = true;
+
+      // 🔥 IMPORTANT: handle tap inside immersive AR
+      this.session.addEventListener("select", () => {
+        this.onSelect?.();
+      });
 
       this.session.addEventListener("end", () => {
         this.xrActive = false;
