@@ -20,15 +20,37 @@ export class App {
     this.scene = new SceneManager(container);
     this.scene.start();
 
-    // 🔥 ALWAYS use placement mode
     this.scene.setModule(new PlacementModule(this.selectedModel));
 
     const arBtn = document.createElement("button");
     arBtn.innerText = "Start AR";
+
     arBtn.style.position = "absolute";
-    arBtn.style.top = "20px";
-    arBtn.style.left = "20px";
+    arBtn.style.top = "50%";
+    arBtn.style.left = "50%";
+    arBtn.style.transform = "translate(-50%, -50%)";
     arBtn.style.zIndex = "1000";
+
+    arBtn.style.padding = "18px 36px";
+    arBtn.style.fontSize = "20px";
+    arBtn.style.fontWeight = "600";
+    arBtn.style.borderRadius = "14px";
+    arBtn.style.background = "linear-gradient(135deg, #6a5cff, #00aaff)";
+    arBtn.style.color = "white";
+    arBtn.style.border = "none";
+    arBtn.style.cursor = "pointer";
+    arBtn.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)";
+    arBtn.style.transition = "all 0.2s ease";
+
+    arBtn.onmousedown = () => {
+      arBtn.style.transform = "translate(-50%, -50%) scale(0.95)";
+    };
+    arBtn.onmouseup = () => {
+      arBtn.style.transform = "translate(-50%, -50%) scale(1)";
+    };
+    arBtn.onmouseleave = () => {
+      arBtn.style.transform = "translate(-50%, -50%) scale(1)";
+    };
 
     arBtn.onclick = () => {
       this.tracker.stop();
@@ -42,6 +64,9 @@ export class App {
       if (this.videoEl) {
         this.videoEl.style.display = "none";
       }
+
+      arBtn.style.opacity = "0";
+      arBtn.style.pointerEvents = "none";
 
       container.dispatchEvent(new Event("start-ar"));
     };
