@@ -16,6 +16,17 @@ export class PlacementModule implements ExperienceModule {
   private statusEl?: HTMLDivElement;
   private clickHandler?: () => void;
   private startArHandler?: () => void;
+  private touchStartHandler?: (event: TouchEvent) => void;
+  private touchMoveHandler?: (event: TouchEvent) => void;
+  private touchEndHandler?: () => void;
+
+  private isDragging = false;
+  private lastTouchX = 0;
+  private lastTouchY = 0;
+  private pinchStartDistance = 0;
+  private pinchStartAngle = 0;
+  private pinchStartScale = 1;
+  private pinchStartRotationY = 0;
 
   constructor(private selectedModel: ModelOption) {}
 
@@ -126,8 +137,69 @@ export class PlacementModule implements ExperienceModule {
     this.clickHandler = () => {
       this.tryPlace();
     };
-
     context.element.addEventListener("click", this.clickHandler);
+
+    this.touchStartHandler = (event: TouchEvent) => {
+      if (!this.placement.isPlaced()) return;
+      if (event.touches.length === 1) {
+        this.isDragging = true;
+        this.lastTouchX = event.touches[0].clientX;
+        this.lastTouchY = event.touches[0].clientY;
+      } else if (event.touches.length === 2) {
+        this.isDragging = false;
+        this.pinchStartDistance = this.getTouchDistance(event.touches[0], event.touches[1]);
+        this.pinchStartAngle = this.getTouchAngle(event.touches[0], event.touches[1]);
+        this.pinchStartScale = this.root.scale.x || 1;
+        this.pinchStartRotationY = this.root.rotation.y;
+      }
+    };
+
+    this.touchMoveHandler = (event: TouchEvent) => {
+      if (!this.placement.isPlaced()) return;
+
+      if (event.touches.length === 1 && this.isDragging && this.context) {
+        event.preventDefault();
+        const touch = event.touches[0];
+        const dx = touch.clientX - this.lastTouchX;
+        const dy = touch.clientY - this.lastTouchY;
+        this.lastTouchX = touch.clientX;
+        this.lastTouchY = touch.clientY;
+
+        const camera = this.context.camera;
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        forward.y = 0;
+        forward.normalize();
+
+        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+        const moveScale = 0.002;
+
+        this.root.position.addScaledVector(right, dx * moveScale);
+        this.root.position.addScaledVector(forward, -dy * moveScale);
+      } else if (event.touches.length === 2) {
+        event.preventDefault();
+        const distance = this.getTouchDistance(event.touches[0], event.touches[1]);
+        const angle = this.getTouchAngle(event.touches[0], event.touches[1]);
+
+        if (this.pinchStartDistance > 0) {
+          const scaleFactor = distance / this.pinchStartDistance;
+          const clampedScale = THREE.MathUtils.clamp(this.pinchStartScale * scaleFactor, 0.25, 4);
+          this.root.scale.setScalar(clampedScale);
+        }
+
+        const angleDelta = angle - this.pinchStartAngle;
+        this.root.rotation.y = this.pinchStartRotationY + angleDelta;
+      }
+    };
+
+    this.touchEndHandler = () => {
+      this.isDragging = false;
+      this.pinchStartDistance = 0;
+    };
+
+    context.element.addEventListener("touchstart", this.touchStartHandler, { passive: false });
+    context.element.addEventListener("touchmove", this.touchMoveHandler, { passive: false });
+    context.element.addEventListener("touchend", this.touchEndHandler);
+    context.element.addEventListener("touchcancel", this.touchEndHandler);
   }
 
   unmount(parent: THREE.Object3D): void {
@@ -138,6 +210,16 @@ export class PlacementModule implements ExperienceModule {
       }
       if (this.startArHandler) {
         this.context.element.removeEventListener("start-ar", this.startArHandler);
+      }
+      if (this.touchStartHandler) {
+        this.context.element.removeEventListener("touchstart", this.touchStartHandler);
+      }
+      if (this.touchMoveHandler) {
+        this.context.element.removeEventListener("touchmove", this.touchMoveHandler);
+      }
+      if (this.touchEndHandler) {
+        this.context.element.removeEventListener("touchend", this.touchEndHandler);
+        this.context.element.removeEventListener("touchcancel", this.touchEndHandler);
       }
     }
 
@@ -170,17 +252,27 @@ export class PlacementModule implements ExperienceModule {
       return;
     }
     if (this.placement.isPlaced()) {
-      this.setStatus("Model already placed.");
+      this.setStatus("Model already placed. Drag to move, pinch to scale/rotate.");
       return;
     }
 
     const placed = this.placement.place(this.root);
     if (placed) {
       this.model.visible = true;
-      this.setStatus("Model placed.");
+      this.setStatus("Model placed. Drag to move, pinch to scale/rotate.");
     } else {
       this.setStatus("Reticle not ready. Move phone until it locks onto a surface.");
     }
+  }
+
+  private getTouchDistance(a: Touch, b: Touch): number {
+    const dx = a.clientX - b.clientX;
+    const dy = a.clientY - b.clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  private getTouchAngle(a: Touch, b: Touch): number {
+    return Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
   }
 
   private createStatusOverlay(element: HTMLElement) {
