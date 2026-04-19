@@ -62,25 +62,26 @@ export class PlacementModule implements ExperienceModule {
         }
 
         this.model.updateWorldMatrix(true, true);
-        const box = new THREE.Box3().setFromObject(this.model);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
+        const originalBox = new THREE.Box3().setFromObject(this.model);
+        const originalSize = originalBox.getSize(new THREE.Vector3());
+        const originalMaxDim = Math.max(originalSize.x, originalSize.y, originalSize.z);
 
-        const maxDim = Math.max(size.x, size.y, size.z);
-        if (!Number.isFinite(maxDim) || maxDim <= 0) {
+        if (!Number.isFinite(originalMaxDim) || originalMaxDim <= 0) {
           console.warn("Placed GLB has invalid bounds");
           this.setStatus("Model loaded, but bounds are invalid.");
           return;
         }
 
-        const scale = this.selectedModel.placementScale ?? 1;
-        // Temporary visibility boost for AR debugging.
-        this.model.scale.setScalar(scale);
+        const placementScale = this.selectedModel.placementScale ?? 1;
+        const placementTargetSize = this.selectedModel.placementTargetSize ?? 0.5;
+        const normalizedScale = (placementTargetSize / originalMaxDim) * placementScale;
+        this.model.scale.setScalar(normalizedScale);
         this.model.updateWorldMatrix(true, true);
 
         const scaledBox = new THREE.Box3().setFromObject(this.model);
         const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
         const minY = scaledBox.min.y;
+        const worldSize = scaledBox.getSize(new THREE.Vector3());
 
         this.model.position.sub(scaledCenter);
         this.model.position.y -= minY;
@@ -92,7 +93,9 @@ export class PlacementModule implements ExperienceModule {
         this.model.visible = false;
         this.root.add(this.model);
 
-        this.setStatus(`Model loaded: ${this.selectedModel.label}. Press Start AR, then tap reticle.`);
+        this.setStatus(
+          `Model loaded: ${this.selectedModel.label} (${worldSize.x.toFixed(2)} × ${worldSize.y.toFixed(2)} × ${worldSize.z.toFixed(2)}m). Press Start AR, then tap reticle.`
+        );
       },
       undefined,
       (error) => {
@@ -173,10 +176,8 @@ export class PlacementModule implements ExperienceModule {
 
     const placed = this.placement.place(this.root);
     if (placed) {
-    
-
       this.model.visible = true;
-      this.setStatus("Model placed. Magenta debug cube added.");
+      this.setStatus("Model placed.");
     } else {
       this.setStatus("Reticle not ready. Move phone until it locks onto a surface.");
     }
