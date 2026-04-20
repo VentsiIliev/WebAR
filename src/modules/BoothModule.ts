@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import type { ExperienceModule, ExperienceModuleContext } from "./ExperienceModule";
 import { BOOTH_CONFIG } from "../booth/boothConfig";
 
@@ -8,6 +9,7 @@ export class BoothModule implements ExperienceModule {
 
   private root = new THREE.Group();
   private loader = new GLTFLoader();
+  private dracoLoader = new DRACOLoader();
   private context?: ExperienceModuleContext;
   private isMounted = false;
 
@@ -37,6 +39,11 @@ export class BoothModule implements ExperienceModule {
   private currentScale = 1;
 
   private lightGroup = new THREE.Group();
+
+  constructor() {
+    this.dracoLoader.setDecoderPath("https://www.gstatic.com/draco/v1/decoders/");
+    this.loader.setDRACOLoader(this.dracoLoader);
+  }
 
   private onPointerDown = (e: PointerEvent) => {
     if ((e.target as HTMLElement)?.closest("button")) return;
