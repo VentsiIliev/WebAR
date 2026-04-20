@@ -31,7 +31,6 @@ export class PlacementModule implements ExperienceModule {
     parent.add(this.root);
 
     this.createStatusOverlay(context.element);
-    this.createToolbar(document.body);
     this.setMode("move");
     this.setStatus("Loading table…");
 
