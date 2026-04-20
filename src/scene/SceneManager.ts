@@ -11,11 +11,13 @@ export class SceneManager {
   private anchor = new Anchor();
   private module?: ExperienceModule;
   private container: HTMLElement;
+  private overlayRoot?: HTMLElement;
 
   private lastTime = performance.now();
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, overlayRoot?: HTMLElement) {
     this.container = container;
+    this.overlayRoot = overlayRoot;
 
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -48,6 +50,7 @@ export class SceneManager {
 
     const context: ExperienceModuleContext = {
       element: this.container,
+      overlayRoot: this.overlayRoot,
       camera: this.camera,
       scene: this.scene,
       renderer: this.renderer,
