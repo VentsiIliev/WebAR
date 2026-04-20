@@ -5,11 +5,13 @@ import type { ExperienceModule, ExperienceModuleContext } from "../modules/Exper
 
 export class SceneManager {
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+  private camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 1000);
   private renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 
   private anchor = new Anchor();
+  private worldRoot = new THREE.Group();
   private module?: ExperienceModule;
+  private moduleParent?: THREE.Object3D;
   private container: HTMLElement;
   private overlayRoot?: HTMLElement;
 
@@ -26,6 +28,7 @@ export class SceneManager {
     this.renderer.xr.enabled = true;
     container.appendChild(this.renderer.domElement);
 
+    this.scene.add(this.worldRoot);
     this.scene.add(this.anchor.markerRoot);
 
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
@@ -42,11 +45,15 @@ export class SceneManager {
   }
 
   setModule(module: ExperienceModule) {
-    if (this.module) {
-      this.module.unmount(this.anchor.userGroup);
+    if (this.module && this.moduleParent) {
+      this.module.unmount(this.moduleParent);
     }
 
     this.module = module;
+    this.moduleParent = module.mode === "booth" ? this.worldRoot : this.anchor.userGroup;
+
+    this.worldRoot.visible = module.mode === "booth";
+    this.anchor.markerRoot.visible = module.mode !== "booth";
 
     const context: ExperienceModuleContext = {
       element: this.container,
@@ -56,11 +63,11 @@ export class SceneManager {
       renderer: this.renderer,
     };
 
-    this.module.mount(this.anchor.userGroup, context);
+    this.module.mount(this.moduleParent, context);
   }
 
   getGestureTarget() {
-    return this.module?.getGestureTarget() ?? this.anchor.userGroup;
+    return this.module?.getGestureTarget() ?? this.moduleParent ?? this.anchor.userGroup;
   }
 
   onDoubleTap() {
@@ -72,6 +79,7 @@ export class SceneManager {
   }
 
   updatePose(pose: Pose) {
+    if (this.module?.mode === "booth") return;
     this.anchor.updatePose(pose);
   }
 
