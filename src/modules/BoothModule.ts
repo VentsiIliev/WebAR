@@ -13,6 +13,7 @@ export class BoothModule implements ExperienceModule {
 
   private booth?: THREE.Object3D;
   private debugCube?: THREE.Mesh;
+  private boothHelper?: THREE.BoxHelper;
 
   private yaw = 0;
   private pitch = 0;
@@ -203,6 +204,8 @@ export class BoothModule implements ExperienceModule {
   }
 
   private loadBooth() {
+    console.log("Loading booth from:", BOOTH_CONFIG.path);
+
     this.loader.load(
       BOOTH_CONFIG.path,
       (gltf) => {
@@ -218,7 +221,6 @@ export class BoothModule implements ExperienceModule {
 
         console.log("BOOTH BOUNDS", box.min, box.max, size);
 
-        // center horizontally, keep floor at y=0
         booth.position.x -= center.x;
         booth.position.z -= center.z;
         booth.position.y -= minY;
@@ -231,22 +233,20 @@ export class BoothModule implements ExperienceModule {
 
           child.frustumCulled = false;
 
-          const applyMaterial = (material: THREE.Material) => {
-            material.side = THREE.DoubleSide;
-            material.needsUpdate = true;
-          };
-
-          if (Array.isArray(child.material)) {
-            child.material.forEach(applyMaterial);
-          } else {
-            applyMaterial(child.material);
-          }
+          child.material = new THREE.MeshStandardMaterial({
+            color: 0x66ccff,
+            roughness: 1,
+            metalness: 0,
+            side: THREE.DoubleSide,
+          });
         });
 
         this.booth = booth;
         this.root.add(booth);
 
-        // remove debug cube after successful load
+        this.boothHelper = new THREE.BoxHelper(booth, 0x00ff00);
+        this.root.add(this.boothHelper);
+
         if (this.debugCube) {
           this.root.remove(this.debugCube);
           this.debugCube = undefined;
@@ -256,7 +256,7 @@ export class BoothModule implements ExperienceModule {
       },
       undefined,
       (err) => {
-        console.error("Booth load failed", err);
+        console.error("Booth load failed", BOOTH_CONFIG.path, err);
       }
     );
   }
@@ -268,9 +268,9 @@ export class BoothModule implements ExperienceModule {
 
     const depth = size?.z ?? 10;
     const width = size?.x ?? 10;
-    const startDistance = Math.max(depth, width) * 0.8;
+    const startDistance = Math.max(depth, width) * 1.5;
 
-    cam.position.set(0, 1.7, Math.max(8, startDistance));
+    cam.position.set(0, 1.7, Math.max(12, startDistance));
     cam.lookAt(0, 1.6, 0);
     cam.near = 0.01;
     cam.far = 1000;
@@ -315,6 +315,7 @@ export class BoothModule implements ExperienceModule {
     }
 
     cam.position.y = 1.7;
+    this.boothHelper?.update();
   }
 
   unmount(parent: THREE.Object3D): void {
@@ -328,6 +329,11 @@ export class BoothModule implements ExperienceModule {
 
     this.detachControls(this.context?.element);
     this.removeMoveButtons();
+
+    if (this.boothHelper) {
+      this.root.remove(this.boothHelper);
+      this.boothHelper = undefined;
+    }
 
     parent.remove(this.root);
     this.root.clear();
