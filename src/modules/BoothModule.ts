@@ -14,8 +14,6 @@ export class BoothModule implements ExperienceModule {
   private isMounted = false;
 
   private booth?: THREE.Object3D;
-  private debugCube?: THREE.Mesh;
-  private boothHelper?: THREE.BoxHelper;
   private boothBounds?: THREE.Box3;
   private eyeHeight = 1.7;
   private movementMargin = 0.35;
@@ -26,6 +24,7 @@ export class BoothModule implements ExperienceModule {
   private moveSpeed = 4;
   private joystickX = 0;
   private joystickY = 0;
+  private joystickDeadZone = 0.12;
 
   private lookActive = false;
   private lastX = 0;
@@ -75,14 +74,14 @@ export class BoothModule implements ExperienceModule {
     this.context = context;
     this.isMounted = true;
 
+    context.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+
     parent.add(this.root);
     this.root.clear();
     this.lightGroup.clear();
     this.currentScale = BOOTH_CONFIG.scale ?? 1;
 
     this.addBoothLights();
-    this.addDebugCube();
-
     this.loadBooth();
     this.attachControls(context.element);
     this.createJoystick();
@@ -90,26 +89,17 @@ export class BoothModule implements ExperienceModule {
   }
 
   private addBoothLights() {
-    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 1.2);
+    const ambient = new THREE.AmbientLight(0xffffff, 1.0);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 0.9);
 
-    const dir1 = new THREE.DirectionalLight(0xffffff, 1.5);
+    const dir1 = new THREE.DirectionalLight(0xffffff, 1.2);
     dir1.position.set(5, 8, 5);
 
-    const dir2 = new THREE.DirectionalLight(0xffffff, 1.0);
+    const dir2 = new THREE.DirectionalLight(0xffffff, 0.8);
     dir2.position.set(-5, 6, -5);
 
     this.lightGroup.add(ambient, hemi, dir1, dir2);
     this.root.add(this.lightGroup);
-  }
-
-  private addDebugCube() {
-    this.debugCube = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0xff00ff })
-    );
-    this.debugCube.position.set(0, 0.5, 0);
-    this.root.add(this.debugCube);
   }
 
   private attachControls(el: HTMLElement) {
@@ -143,9 +133,9 @@ export class BoothModule implements ExperienceModule {
       width: "120px",
       height: "120px",
       borderRadius: "50%",
-      background: "rgba(14, 16, 30, 0.50)",
-      border: "1px solid rgba(255,255,255,0.18)",
-      boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
+      background: "rgba(14, 16, 30, 0.40)",
+      border: "1px solid rgba(255,255,255,0.14)",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.22)",
       zIndex: "9999",
       touchAction: "none",
       pointerEvents: "auto",
@@ -161,7 +151,7 @@ export class BoothModule implements ExperienceModule {
       transform: "translate(-50%, -50%)",
       borderRadius: "50%",
       background: "rgba(255,255,255,0.88)",
-      boxShadow: "0 6px 18px rgba(0,0,0,0.22)",
+      boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
       pointerEvents: "none",
     } as Partial<CSSStyleDeclaration>);
 
@@ -171,6 +161,13 @@ export class BoothModule implements ExperienceModule {
       this.joystickPointerId = undefined;
       knob.style.left = "50%";
       knob.style.top = "50%";
+    };
+
+    const applyDeadZone = (value: number) => {
+      const abs = Math.abs(value);
+      if (abs < this.joystickDeadZone) return 0;
+      const sign = Math.sign(value);
+      return sign * ((abs - this.joystickDeadZone) / (1 - this.joystickDeadZone));
     };
 
     const updateJoystick = (clientX: number, clientY: number) => {
@@ -185,8 +182,8 @@ export class BoothModule implements ExperienceModule {
       const px = dx * clamped;
       const py = dy * clamped;
 
-      this.joystickX = px / radius;
-      this.joystickY = py / radius;
+      this.joystickX = applyDeadZone(px / radius);
+      this.joystickY = applyDeadZone(py / radius);
 
       knob.style.left = `calc(50% + ${px}px)`;
       knob.style.top = `calc(50% + ${py}px)`;
@@ -285,7 +282,6 @@ export class BoothModule implements ExperienceModule {
     this.currentScale *= factor;
     this.currentScale = THREE.MathUtils.clamp(this.currentScale, 0.01, 50);
     this.booth.scale.setScalar(this.currentScale);
-    this.boothHelper?.update();
     this.refreshBoothBounds();
 
     console.log("BOOTH SCALE:", this.currentScale);
@@ -338,33 +334,8 @@ export class BoothModule implements ExperienceModule {
         this.currentScale = scale;
         booth.scale.setScalar(scale);
 
-        booth.traverse((child) => {
-          if (!(child instanceof THREE.Mesh)) return;
-          child.frustumCulled = false;
-
-          const fix = (mat: THREE.Material) => {
-            (mat as any).side = THREE.DoubleSide;
-            mat.needsUpdate = true;
-          };
-
-          if (Array.isArray(child.material)) {
-            child.material.forEach(fix);
-          } else if (child.material) {
-            fix(child.material);
-          }
-        });
-
         this.booth = booth;
         this.root.add(booth);
-
-        this.boothHelper = new THREE.BoxHelper(booth, 0x00ff00);
-        this.root.add(this.boothHelper);
-
-        if (this.debugCube) {
-          this.root.remove(this.debugCube);
-          this.debugCube = undefined;
-        }
-
         this.refreshBoothBounds();
         this.setupCamera();
       },
@@ -441,8 +412,6 @@ export class BoothModule implements ExperienceModule {
       cam.position.z = THREE.MathUtils.clamp(cam.position.z, min.z + m, max.z - m);
       cam.position.y = this.eyeHeight;
     }
-
-    this.boothHelper?.update();
   }
 
   unmount(parent: THREE.Object3D): void {
@@ -453,16 +422,10 @@ export class BoothModule implements ExperienceModule {
     this.removeJoystick();
     this.removeScaleButtons();
 
-    if (this.boothHelper) {
-      this.root.remove(this.boothHelper);
-      this.boothHelper = undefined;
-    }
-
     parent.remove(this.root);
     this.root.clear();
     this.booth = undefined;
     this.boothBounds = undefined;
-    this.debugCube = undefined;
   }
 
   onDoubleTap(): void {}
