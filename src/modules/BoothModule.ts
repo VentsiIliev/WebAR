@@ -336,15 +336,21 @@ export class BoothModule implements ExperienceModule {
         this.currentScale = scale;
         booth.scale.setScalar(scale);
 
+        // KEEP ORIGINAL MATERIALS, just ensure visibility
         booth.traverse((child) => {
           if (!(child instanceof THREE.Mesh)) return;
           child.frustumCulled = false;
-          child.material = new THREE.MeshStandardMaterial({
-            color: 0x66ccff,
-            roughness: 1,
-            metalness: 0,
-            side: THREE.DoubleSide,
-          });
+
+          const fix = (mat: THREE.Material) => {
+            (mat as any).side = THREE.DoubleSide;
+            mat.needsUpdate = true;
+          };
+
+          if (Array.isArray(child.material)) {
+            child.material.forEach(fix);
+          } else if (child.material) {
+            fix(child.material);
+          }
         });
 
         this.booth = booth;
