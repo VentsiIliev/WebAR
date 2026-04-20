@@ -4,6 +4,14 @@ import type { ExperienceModule, ExperienceModuleContext } from "./ExperienceModu
 import { PlacementController } from "../placement/PlacementController";
 import type { ModelOption } from "../models/modelCatalog";
 
+type ToolMode = "select" | "move" | "rotate" | "scale";
+
+type PlaceableGroup = THREE.Group & {
+  userData: {
+    helper?: THREE.BoxHelper;
+  };
+};
+
 export class PlacementModule implements ExperienceModule {
   readonly mode = "placement" as const;
 
@@ -16,13 +24,23 @@ export class PlacementModule implements ExperienceModule {
   private statusEl?: HTMLDivElement;
   private toolbarEl?: HTMLDivElement;
   private startArHandler?: () => void;
+  private overlayTouchStartHandler?: (event: TouchEvent) => void;
+  private overlayTouchMoveHandler?: (event: TouchEvent) => void;
+  private overlayTouchEndHandler?: (event: TouchEvent) => void;
 
-  private mode: "move" | "rotate" | "scale" = "move";
+  private mode: ToolMode = "select";
   private scaleUp = true;
 
-  private placedObjects: THREE.Group[] = [];
-  private selectedObject?: THREE.Group;
-  private pendingObject?: THREE.Group;
+  private placedObjects: PlaceableGroup[] = [];
+  private selectedObject?: PlaceableGroup;
+  private pendingObject?: PlaceableGroup;
+
+  private dragging = false;
+  private touchMoved = false;
+  private touchStartX = 0;
+  private touchStartY = 0;
+  private lastTouchX = 0;
+  private lastTouchY = 0;
 
   constructor(private selectedModel: ModelOption) {}
 
@@ -31,7 +49,7 @@ export class PlacementModule implements ExperienceModule {
     parent.add(this.root);
 
     this.createStatusOverlay(context.element);
-    this.setMode("move");
+    this.setMode("select");
     this.setStatus("Loading table…");
 
     this.placement.mount(context.scene, context.renderer);
@@ -47,17 +65,19 @@ export class PlacementModule implements ExperienceModule {
         return;
       }
 
-      if (this.mode === "move") {
-        this.moveSelectedToReticle();
-      } else if (this.mode === "rotate") {
-        this.selectedObject.rotation.y += Math.PI / 12;
-        this.setStatus("Rotate: turned selected table 15°.");
-      } else {
+      if (this.mode === "select") {
+        this.selectNextObject(1);
+      } else if (this.mode === "scale") {
         const factor = this.scaleUp ? 1.15 : 1 / 1.15;
         const nextScale = THREE.MathUtils.clamp(this.selectedObject.scale.x * factor, 0.25, 4);
         this.selectedObject.scale.setScalar(nextScale);
         this.scaleUp = !this.scaleUp;
         this.setStatus(`Scale: ${nextScale.toFixed(2)}x`);
+      } else if (this.mode === "move") {
+        this.moveSelectedToReticle();
+      } else if (this.mode === "rotate") {
+        this.selectedObject.rotation.y += Math.PI / 12;
+        this.setStatus("Rotate: turned selected table 15°.");
       }
     });
 
@@ -115,9 +135,15 @@ export class PlacementModule implements ExperienceModule {
         return;
       }
 
-      if (!this.toolbarEl) {
-        this.createToolbar(this.context?.overlayRoot || document.body);
+      const overlay = this.context?.overlayRoot;
+      if (overlay) {
+        overlay.style.pointerEvents = "auto";
       }
+
+      if (!this.toolbarEl) {
+        this.createToolbar(overlay || document.body);
+      }
+      this.attachOverlayGestures(overlay || this.context!.element);
 
       this.canPlace = false;
       this.setStatus("Move your phone slowly until the keyring appears, then tap the keyring.");
@@ -136,10 +162,15 @@ export class PlacementModule implements ExperienceModule {
       this.placement.unmount(this.context.scene);
     }
 
+    this.detachOverlayGestures(this.context?.overlayRoot || this.context?.element);
     this.toolbarEl?.remove();
     this.statusEl?.remove();
     this.toolbarEl = undefined;
     this.statusEl = undefined;
+
+    [...this.placedObjects, this.pendingObject].forEach((obj) => {
+      if (obj?.userData.helper) this.root.remove(obj.userData.helper);
+    });
 
     this.placedObjects = [];
     this.selectedObject = undefined;
@@ -152,6 +183,11 @@ export class PlacementModule implements ExperienceModule {
   update(): void {
     if (!this.context) return;
     this.placement.update(this.context.camera);
+
+    for (const obj of this.placedObjects) {
+      obj.userData.helper?.update();
+    }
+    this.pendingObject?.userData.helper?.update();
   }
 
   onDoubleTap(): void {}
@@ -163,12 +199,18 @@ export class PlacementModule implements ExperienceModule {
   private preparePendingObject() {
     if (!this.template || this.pendingObject) return;
 
-    const group = new THREE.Group();
+    const group = new THREE.Group() as PlaceableGroup;
     const clone = this.template.clone(true);
     group.add(clone);
     this.root.add(group);
+
+    const helper = new THREE.BoxHelper(group, 0x7c5cff);
+    helper.visible = false;
+    this.root.add(helper);
+    group.userData.helper = helper;
+
     this.pendingObject = group;
-    this.selectedObject = group;
+    this.setSelectedObject(group);
     this.setStatus("Keyring ready: tap the keyring to place the table.");
   }
 
@@ -185,9 +227,9 @@ export class PlacementModule implements ExperienceModule {
     }
 
     this.placedObjects.push(this.pendingObject);
-    this.selectedObject = this.pendingObject;
+    this.setSelectedObject(this.pendingObject);
     this.pendingObject = undefined;
-    this.setStatus("Table placed. Use toolbar: Move, Rotate, Scale, Add, Remove, Reset.");
+    this.setStatus("Table placed. Use toolbar: Select, Move, Rotate, Scale, Add, Remove, Reset.");
   }
 
   private moveSelectedToReticle() {
@@ -207,10 +249,18 @@ export class PlacementModule implements ExperienceModule {
     this.setStatus("Move: selected table moved to the keyring.");
   }
 
-  private setMode(mode: "move" | "rotate" | "scale") {
+  private setMode(mode: ToolMode) {
     this.mode = mode;
     this.updateToolbarState();
-    this.setStatus(`Mode: ${mode.toUpperCase()}. Tap the screen to use this mode.`);
+    if (mode === "select") {
+      this.setStatus("Mode: SELECT. Swipe left/right to cycle through tables.");
+    } else if (mode === "move") {
+      this.setStatus("Mode: MOVE. Swipe to move the selected table precisely.");
+    } else if (mode === "rotate") {
+      this.setStatus("Mode: ROTATE. Swipe left/right to rotate the selected table.");
+    } else {
+      this.setStatus("Mode: SCALE. Tap screen to resize the selected table.");
+    }
   }
 
   private addObject() {
@@ -228,29 +278,139 @@ export class PlacementModule implements ExperienceModule {
     }
 
     this.root.remove(this.selectedObject);
+    if (this.selectedObject.userData.helper) {
+      this.root.remove(this.selectedObject.userData.helper);
+    }
     this.placedObjects = this.placedObjects.filter((o) => o !== this.selectedObject);
     if (this.pendingObject === this.selectedObject) {
       this.pendingObject = undefined;
     }
-    this.selectedObject = this.placedObjects.at(-1);
+    this.setSelectedObject(this.placedObjects.at(-1));
     this.setStatus("Selected table removed.");
   }
 
   private resetScene() {
-    this.placedObjects.forEach((o) => this.root.remove(o));
+    this.placedObjects.forEach((o) => {
+      this.root.remove(o);
+      if (o.userData.helper) this.root.remove(o.userData.helper);
+    });
     if (this.pendingObject) {
       this.root.remove(this.pendingObject);
+      if (this.pendingObject.userData.helper) this.root.remove(this.pendingObject.userData.helper);
     }
 
     this.placedObjects = [];
     this.pendingObject = undefined;
-    this.selectedObject = undefined;
+    this.setSelectedObject(undefined);
 
     if (this.canPlace) {
       this.preparePendingObject();
       this.setStatus("Scene reset. Tap the keyring to place a new table.");
     } else {
       this.setStatus("Scene reset.");
+    }
+  }
+
+  private setSelectedObject(object?: PlaceableGroup) {
+    this.selectedObject = object;
+    const all = [...this.placedObjects, this.pendingObject].filter(Boolean) as PlaceableGroup[];
+    all.forEach((obj) => {
+      if (obj.userData.helper) obj.userData.helper.visible = obj === object;
+    });
+  }
+
+  private selectNextObject(direction: 1 | -1) {
+    if (this.placedObjects.length === 0) {
+      this.setStatus("No placed tables to select.");
+      return;
+    }
+    const currentIndex = this.selectedObject ? this.placedObjects.indexOf(this.selectedObject) : -1;
+    const nextIndex = currentIndex < 0
+      ? 0
+      : (currentIndex + direction + this.placedObjects.length) % this.placedObjects.length;
+    this.setSelectedObject(this.placedObjects[nextIndex]);
+    this.setStatus(`Selected table ${nextIndex + 1} of ${this.placedObjects.length}.`);
+  }
+
+  private attachOverlayGestures(el?: HTMLElement) {
+    if (!el || this.overlayTouchStartHandler) return;
+
+    this.overlayTouchStartHandler = (event: TouchEvent) => {
+      if ((event.target as HTMLElement)?.closest("button")) return;
+      if (!this.selectedObject || this.pendingObject || event.touches.length !== 1) return;
+      if (this.mode !== "move" && this.mode !== "rotate" && this.mode !== "select") return;
+
+      this.dragging = true;
+      this.touchMoved = false;
+      this.touchStartX = this.lastTouchX = event.touches[0].clientX;
+      this.touchStartY = this.lastTouchY = event.touches[0].clientY;
+    };
+
+    this.overlayTouchMoveHandler = (event: TouchEvent) => {
+      if (!this.dragging || !this.selectedObject || event.touches.length !== 1) return;
+      if ((event.target as HTMLElement)?.closest("button")) return;
+
+      const touch = event.touches[0];
+      const dx = touch.clientX - this.lastTouchX;
+      const dy = touch.clientY - this.lastTouchY;
+      const totalDx = touch.clientX - this.touchStartX;
+      const totalDy = touch.clientY - this.touchStartY;
+      this.lastTouchX = touch.clientX;
+      this.lastTouchY = touch.clientY;
+      this.touchMoved = this.touchMoved || Math.abs(totalDx) > 6 || Math.abs(totalDy) > 6;
+
+      if (this.mode === "move" && this.context) {
+        event.preventDefault();
+        const camera = this.context.camera;
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        forward.y = 0;
+        if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+        forward.normalize();
+        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+        const moveScale = 0.0018;
+        this.selectedObject.position.addScaledVector(right, dx * moveScale);
+        this.selectedObject.position.addScaledVector(forward, -dy * moveScale);
+      } else if (this.mode === "rotate") {
+        event.preventDefault();
+        this.selectedObject.rotation.y += dx * 0.01;
+      }
+    };
+
+    this.overlayTouchEndHandler = (event: TouchEvent) => {
+      if (!this.dragging) return;
+      this.dragging = false;
+
+      const totalDx = this.lastTouchX - this.touchStartX;
+      const totalDy = this.lastTouchY - this.touchStartY;
+      if (this.mode === "select") {
+        if (Math.abs(totalDx) > 24 && Math.abs(totalDx) > Math.abs(totalDy)) {
+          this.selectNextObject(totalDx > 0 ? 1 : -1);
+        } else if (!this.touchMoved) {
+          this.selectNextObject(1);
+        }
+      }
+    };
+
+    el.addEventListener("touchstart", this.overlayTouchStartHandler, { passive: false });
+    el.addEventListener("touchmove", this.overlayTouchMoveHandler, { passive: false });
+    el.addEventListener("touchend", this.overlayTouchEndHandler);
+    el.addEventListener("touchcancel", this.overlayTouchEndHandler);
+  }
+
+  private detachOverlayGestures(el?: HTMLElement) {
+    if (!el) return;
+    if (this.overlayTouchStartHandler) {
+      el.removeEventListener("touchstart", this.overlayTouchStartHandler);
+      this.overlayTouchStartHandler = undefined;
+    }
+    if (this.overlayTouchMoveHandler) {
+      el.removeEventListener("touchmove", this.overlayTouchMoveHandler);
+      this.overlayTouchMoveHandler = undefined;
+    }
+    if (this.overlayTouchEndHandler) {
+      el.removeEventListener("touchend", this.overlayTouchEndHandler);
+      el.removeEventListener("touchcancel", this.overlayTouchEndHandler);
+      this.overlayTouchEndHandler = undefined;
     }
   }
 
@@ -315,6 +475,7 @@ export class PlacementModule implements ExperienceModule {
       this.toolbarEl!.appendChild(btn);
     };
 
+    makeButton("Select", () => this.setMode("select"), "select");
     makeButton("Move", () => this.setMode("move"), "move");
     makeButton("Rotate", () => this.setMode("rotate"), "rotate");
     makeButton("Scale", () => this.setMode("scale"), "scale");
