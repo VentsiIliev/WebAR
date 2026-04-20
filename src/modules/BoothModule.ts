@@ -275,11 +275,19 @@ export class BoothModule implements ExperienceModule {
 
   private loadBooth() {
     console.log("Loading booth from:", BOOTH_CONFIG.path);
+    const startedAt = performance.now();
+    const timeoutId = window.setTimeout(() => {
+      console.warn(
+        `Booth still loading after ${((performance.now() - startedAt) / 1000).toFixed(1)}s: ${BOOTH_CONFIG.path}`
+      );
+    }, 12000);
 
     this.loader.load(
       BOOTH_CONFIG.path,
       (gltf) => {
         if (!this.isMounted) return;
+        window.clearTimeout(timeoutId);
+        console.log(`Booth loaded successfully in ${((performance.now() - startedAt) / 1000).toFixed(2)}s`);
 
         const booth = gltf.scene;
         booth.updateWorldMatrix(true, true);
@@ -325,8 +333,16 @@ export class BoothModule implements ExperienceModule {
 
         this.setupCamera(size);
       },
-      undefined,
+      (event) => {
+        if (event.total && event.total > 0) {
+          const pct = ((event.loaded / event.total) * 100).toFixed(1);
+          console.log(`Booth loading: ${pct}% (${event.loaded}/${event.total} bytes)`);
+        } else {
+          console.log(`Booth loading bytes: ${event.loaded}`);
+        }
+      },
       (err) => {
+        window.clearTimeout(timeoutId);
         console.error("Booth load failed", BOOTH_CONFIG.path, err);
       }
     );
