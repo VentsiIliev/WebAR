@@ -21,18 +21,18 @@ export class BoothModule implements ExperienceModule {
   private yaw = 0;
   private pitch = 0;
 
-  private moveSpeed = 4;
-  private joystickX = 0;
-  private joystickY = 0;
-  private joystickDeadZone = 0.12;
+  private stepDistance = 1.1;
+  private stepDurationMs = 260;
+  private lastTapTime = 0;
+  private isStepping = false;
+  private stepStart?: THREE.Vector3;
+  private stepTarget?: THREE.Vector3;
+  private stepProgressMs = 0;
 
   private lookActive = false;
   private lastX = 0;
   private lastY = 0;
 
-  private joystickBase?: HTMLDivElement;
-  private joystickKnob?: HTMLDivElement;
-  private joystickPointerId?: number;
   private scaleUpBtn?: HTMLButtonElement;
   private scaleDownBtn?: HTMLButtonElement;
   private currentScale = 1;
@@ -45,7 +45,7 @@ export class BoothModule implements ExperienceModule {
   }
 
   private onPointerDown = (e: PointerEvent) => {
-    if ((e.target as HTMLElement)?.closest("button") || (e.target as HTMLElement)?.closest("[data-joystick='base']")) return;
+    if ((e.target as HTMLElement)?.closest("button")) return;
 
     this.lookActive = true;
     this.lastX = e.clientX;
@@ -66,8 +66,18 @@ export class BoothModule implements ExperienceModule {
     this.pitch = THREE.MathUtils.clamp(this.pitch, -Math.PI / 3, Math.PI / 3);
   };
 
-  private onPointerUp = () => {
+  private onPointerUp = (e: PointerEvent) => {
     this.lookActive = false;
+
+    if ((e.target as HTMLElement)?.closest("button")) return;
+
+    const now = performance.now();
+    if (now - this.lastTapTime < 300) {
+      this.startStepMove();
+      this.lastTapTime = 0;
+    } else {
+      this.lastTapTime = now;
+    }
   };
 
   mount(parent: THREE.Object3D, context: ExperienceModuleContext): void {
@@ -80,11 +90,15 @@ export class BoothModule implements ExperienceModule {
     this.root.clear();
     this.lightGroup.clear();
     this.currentScale = BOOTH_CONFIG.scale ?? 1;
+    this.lastTapTime = 0;
+    this.isStepping = false;
+    this.stepProgressMs = 0;
+    this.stepStart = undefined;
+    this.stepTarget = undefined;
 
     this.addBoothLights();
     this.loadBooth();
     this.attachControls(context.element);
-    this.createJoystick();
     this.createScaleButtons();
   }
 
@@ -119,114 +133,6 @@ export class BoothModule implements ExperienceModule {
     el.removeEventListener("pointerup", this.onPointerUp);
     el.removeEventListener("pointercancel", this.onPointerUp);
     el.removeEventListener("pointerleave", this.onPointerUp);
-  }
-
-  private createJoystick() {
-    if (this.joystickBase) return;
-
-    const base = document.createElement("div");
-    base.dataset.joystick = "base";
-    Object.assign(base.style, {
-      position: "fixed",
-      left: "24px",
-      bottom: "24px",
-      width: "120px",
-      height: "120px",
-      borderRadius: "50%",
-      background: "rgba(14, 16, 30, 0.40)",
-      border: "1px solid rgba(255,255,255,0.14)",
-      boxShadow: "0 8px 24px rgba(0,0,0,0.22)",
-      zIndex: "9999",
-      touchAction: "none",
-      pointerEvents: "auto",
-    } as Partial<CSSStyleDeclaration>);
-
-    const knob = document.createElement("div");
-    Object.assign(knob.style, {
-      position: "absolute",
-      left: "50%",
-      top: "50%",
-      width: "52px",
-      height: "52px",
-      transform: "translate(-50%, -50%)",
-      borderRadius: "50%",
-      background: "rgba(255,255,255,0.88)",
-      boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
-      pointerEvents: "none",
-    } as Partial<CSSStyleDeclaration>);
-
-    const resetJoystick = () => {
-      this.joystickX = 0;
-      this.joystickY = 0;
-      this.joystickPointerId = undefined;
-      knob.style.left = "50%";
-      knob.style.top = "50%";
-    };
-
-    const applyDeadZone = (value: number) => {
-      const abs = Math.abs(value);
-      if (abs < this.joystickDeadZone) return 0;
-      const sign = Math.sign(value);
-      return sign * ((abs - this.joystickDeadZone) / (1 - this.joystickDeadZone));
-    };
-
-    const updateJoystick = (clientX: number, clientY: number) => {
-      const rect = base.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const dx = clientX - cx;
-      const dy = clientY - cy;
-      const radius = rect.width * 0.33;
-      const dist = Math.hypot(dx, dy);
-      const clamped = dist > radius ? radius / dist : 1;
-      const px = dx * clamped;
-      const py = dy * clamped;
-
-      this.joystickX = applyDeadZone(px / radius);
-      this.joystickY = applyDeadZone(py / radius);
-
-      knob.style.left = `calc(50% + ${px}px)`;
-      knob.style.top = `calc(50% + ${py}px)`;
-    };
-
-    base.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      this.joystickPointerId = e.pointerId;
-      updateJoystick(e.clientX, e.clientY);
-      base.setPointerCapture(e.pointerId);
-    });
-
-    base.addEventListener("pointermove", (e) => {
-      if (this.joystickPointerId !== e.pointerId) return;
-      e.preventDefault();
-      updateJoystick(e.clientX, e.clientY);
-    });
-
-    const end = (e: PointerEvent) => {
-      if (this.joystickPointerId !== e.pointerId) return;
-      e.preventDefault();
-      resetJoystick();
-      if (base.hasPointerCapture(e.pointerId)) base.releasePointerCapture(e.pointerId);
-    };
-
-    base.addEventListener("pointerup", end);
-    base.addEventListener("pointercancel", end);
-    base.addEventListener("pointerleave", end);
-
-    base.appendChild(knob);
-    document.body.appendChild(base);
-
-    this.joystickBase = base;
-    this.joystickKnob = knob;
-  }
-
-  private removeJoystick() {
-    this.joystickBase?.remove();
-    this.joystickBase = undefined;
-    this.joystickKnob = undefined;
-    this.joystickPointerId = undefined;
-    this.joystickX = 0;
-    this.joystickY = 0;
   }
 
   private createScaleButtons() {
@@ -276,6 +182,21 @@ export class BoothModule implements ExperienceModule {
     );
   }
 
+  private startStepMove() {
+    if (!this.context || this.isStepping) return;
+
+    const cam = this.context.camera as THREE.PerspectiveCamera;
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    forward.y = 0;
+    if (forward.lengthSq() === 0) return;
+    forward.normalize();
+
+    this.stepStart = cam.position.clone();
+    this.stepTarget = cam.position.clone().addScaledVector(forward, this.stepDistance);
+    this.isStepping = true;
+    this.stepProgressMs = 0;
+  }
+
   private scaleBooth(factor: number) {
     if (!this.booth) return;
 
@@ -298,6 +219,18 @@ export class BoothModule implements ExperienceModule {
     if (!this.booth) return;
     this.booth.updateWorldMatrix(true, true);
     this.boothBounds = new THREE.Box3().setFromObject(this.booth);
+  }
+
+  private clampCameraToBounds(cam: THREE.PerspectiveCamera) {
+    if (!this.boothBounds) return;
+
+    const min = this.boothBounds.min;
+    const max = this.boothBounds.max;
+    const m = this.movementMargin;
+
+    cam.position.x = THREE.MathUtils.clamp(cam.position.x, min.x + m, max.x - m);
+    cam.position.z = THREE.MathUtils.clamp(cam.position.z, min.z + m, max.z - m);
+    cam.position.y = this.eyeHeight;
   }
 
   private loadBooth() {
@@ -385,41 +318,34 @@ export class BoothModule implements ExperienceModule {
     );
     cam.quaternion.copy(quat);
 
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-    forward.y = 0;
-    if (forward.lengthSq() > 0) forward.normalize();
+    if (this.isStepping && this.stepStart && this.stepTarget) {
+      this.stepProgressMs += deltaMs;
+      const t = Math.min(1, this.stepProgressMs / this.stepDurationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      cam.position.lerpVectors(this.stepStart, this.stepTarget, eased);
+      this.clampCameraToBounds(cam);
 
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
-    right.y = 0;
-    if (right.lengthSq() > 0) right.normalize();
-
-    const move = new THREE.Vector3();
-    move.addScaledVector(right, this.joystickX);
-    move.addScaledVector(forward, -this.joystickY);
-
-    if (move.lengthSq() > 0.0001) {
-      const intensity = Math.min(1, Math.hypot(this.joystickX, this.joystickY));
-      move.normalize();
-      cam.position.addScaledVector(move, this.moveSpeed * intensity * (deltaMs / 1000));
-    }
-
-    if (this.boothBounds) {
-      const min = this.boothBounds.min;
-      const max = this.boothBounds.max;
-      const m = this.movementMargin;
-
-      cam.position.x = THREE.MathUtils.clamp(cam.position.x, min.x + m, max.x - m);
-      cam.position.z = THREE.MathUtils.clamp(cam.position.z, min.z + m, max.z - m);
-      cam.position.y = this.eyeHeight;
+      if (t >= 1) {
+        this.isStepping = false;
+        this.stepProgressMs = 0;
+        this.stepStart = undefined;
+        this.stepTarget = undefined;
+      }
+    } else {
+      this.clampCameraToBounds(cam);
     }
   }
 
   unmount(parent: THREE.Object3D): void {
     this.isMounted = false;
     this.lookActive = false;
+    this.isStepping = false;
+    this.stepProgressMs = 0;
+    this.stepStart = undefined;
+    this.stepTarget = undefined;
+    this.lastTapTime = 0;
 
     this.detachControls(this.context?.element);
-    this.removeJoystick();
     this.removeScaleButtons();
 
     parent.remove(this.root);
