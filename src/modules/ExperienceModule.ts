@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-export type ExperienceMode = "rubik" | "model" | "placement";
+export type ExperienceMode = "rubik" | "model" | "placement" | "booth";
 
 export interface ExperienceModuleContext {
   element: HTMLElement;
