@@ -109,7 +109,7 @@ export class PlacementModule implements ExperienceModule {
 
     this.startArHandler = async () => {
       this.setStatus("Starting AR… Point your phone at the floor or a table surface.");
-      const result = await this.placement.startAR();
+      const result = await this.placement.startAR(this.context?.overlayRoot);
       if (!result.ok) {
         this.setStatus("AR failed to start. Try again.");
         return;
