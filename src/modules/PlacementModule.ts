@@ -115,6 +115,10 @@ export class PlacementModule implements ExperienceModule {
         return;
       }
 
+      if (!this.toolbarEl) {
+        this.createToolbar(this.context?.overlayRoot || document.body);
+      }
+
       this.canPlace = false;
       this.setStatus("Move your phone slowly until the keyring appears, then tap the keyring.");
       setTimeout(() => {
@@ -289,6 +293,7 @@ export class PlacementModule implements ExperienceModule {
       background: "rgba(14, 16, 30, 0.82)",
       backdropFilter: "blur(10px)",
       boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
+      pointerEvents: "auto",
     } as Partial<CSSStyleDeclaration>);
 
     const makeButton = (label: string, onClick: () => void, role?: string) => {
@@ -304,6 +309,7 @@ export class PlacementModule implements ExperienceModule {
         fontSize: "13px",
         fontWeight: "600",
         cursor: "pointer",
+        pointerEvents: "auto",
       } as Partial<CSSStyleDeclaration>);
       btn.onclick = onClick;
       this.toolbarEl!.appendChild(btn);
