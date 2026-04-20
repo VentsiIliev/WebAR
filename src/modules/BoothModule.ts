@@ -30,8 +30,12 @@ export class BoothModule implements ExperienceModule {
   private stepProgressMs = 0;
 
   private lookActive = false;
+  private pointerDownX = 0;
+  private pointerDownY = 0;
   private lastX = 0;
   private lastY = 0;
+  private pointerMoved = false;
+  private tapMoveThresholdPx = 12;
 
   private scaleUpBtn?: HTMLButtonElement;
   private scaleDownBtn?: HTMLButtonElement;
@@ -48,6 +52,9 @@ export class BoothModule implements ExperienceModule {
     if ((e.target as HTMLElement)?.closest("button")) return;
 
     this.lookActive = true;
+    this.pointerMoved = false;
+    this.pointerDownX = e.clientX;
+    this.pointerDownY = e.clientY;
     this.lastX = e.clientX;
     this.lastY = e.clientY;
   };
@@ -61,6 +68,12 @@ export class BoothModule implements ExperienceModule {
     this.lastX = e.clientX;
     this.lastY = e.clientY;
 
+    const totalDx = e.clientX - this.pointerDownX;
+    const totalDy = e.clientY - this.pointerDownY;
+    if (Math.hypot(totalDx, totalDy) > this.tapMoveThresholdPx) {
+      this.pointerMoved = true;
+    }
+
     this.yaw -= dx * 0.005;
     this.pitch -= dy * 0.005;
     this.pitch = THREE.MathUtils.clamp(this.pitch, -Math.PI / 3, Math.PI / 3);
@@ -70,6 +83,11 @@ export class BoothModule implements ExperienceModule {
     this.lookActive = false;
 
     if ((e.target as HTMLElement)?.closest("button")) return;
+
+    const wasTap = !this.pointerMoved;
+    this.pointerMoved = false;
+
+    if (!wasTap) return;
 
     const now = performance.now();
     if (now - this.lastTapTime < 300) {
@@ -95,6 +113,7 @@ export class BoothModule implements ExperienceModule {
     this.stepProgressMs = 0;
     this.stepStart = undefined;
     this.stepTarget = undefined;
+    this.pointerMoved = false;
 
     this.addBoothLights();
     this.loadBooth();
@@ -344,6 +363,7 @@ export class BoothModule implements ExperienceModule {
     this.stepStart = undefined;
     this.stepTarget = undefined;
     this.lastTapTime = 0;
+    this.pointerMoved = false;
 
     this.detachControls(this.context?.element);
     this.removeScaleButtons();
