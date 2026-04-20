@@ -11,20 +11,30 @@ export class BoothModule implements ExperienceModule {
   private context?: ExperienceModuleContext;
   private isMounted = false;
 
+  private booth?: THREE.Object3D;
+  private debugCube?: THREE.Mesh;
+
   private yaw = 0;
   private pitch = 0;
 
   private moveForward = false;
+  private moveBackward = false;
+  private moveLeft = false;
+  private moveRight = false;
   private moveSpeed = 1.5;
 
   private lookActive = false;
   private lastX = 0;
   private lastY = 0;
 
-  private moveBtn?: HTMLButtonElement;
+  private moveForwardBtn?: HTMLButtonElement;
+  private moveBackwardBtn?: HTMLButtonElement;
+  private moveLeftBtn?: HTMLButtonElement;
+  private moveRightBtn?: HTMLButtonElement;
+
+  private lightGroup = new THREE.Group();
 
   private onPointerDown = (e: PointerEvent) => {
-    // ignore UI button presses
     if ((e.target as HTMLElement)?.closest("button")) return;
 
     this.lookActive = true;
@@ -43,7 +53,6 @@ export class BoothModule implements ExperienceModule {
 
     this.yaw -= dx * 0.005;
     this.pitch -= dy * 0.005;
-
     this.pitch = THREE.MathUtils.clamp(this.pitch, -Math.PI / 3, Math.PI / 3);
   };
 
@@ -57,10 +66,37 @@ export class BoothModule implements ExperienceModule {
 
     parent.add(this.root);
     this.root.clear();
+    this.lightGroup.clear();
+
+    this.addBoothLights();
+    this.addDebugCube();
 
     this.loadBooth();
     this.attachControls(context.element);
-    this.createMoveButton();
+    this.createMoveButtons();
+  }
+
+  private addBoothLights() {
+    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 1.2);
+
+    const dir1 = new THREE.DirectionalLight(0xffffff, 1.5);
+    dir1.position.set(5, 8, 5);
+
+    const dir2 = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir2.position.set(-5, 6, -5);
+
+    this.lightGroup.add(ambient, hemi, dir1, dir2);
+    this.root.add(this.lightGroup);
+  }
+
+  private addDebugCube() {
+    this.debugCube = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0xff00ff })
+    );
+    this.debugCube.position.set(0, 0.5, 0);
+    this.root.add(this.debugCube);
   }
 
   private attachControls(el: HTMLElement) {
@@ -82,52 +118,88 @@ export class BoothModule implements ExperienceModule {
     el.removeEventListener("pointerleave", this.onPointerUp);
   }
 
-  private createMoveButton() {
-    if (this.moveBtn) return;
+  private createMoveButtons() {
+    if (this.moveForwardBtn) return;
 
-    const btn = document.createElement("button");
-    btn.innerText = "↑";
-
-    Object.assign(btn.style, {
+    const commonStyle: Partial<CSSStyleDeclaration> = {
       position: "fixed",
-      bottom: "30px",
-      left: "50%",
-      transform: "translateX(-50%)",
       zIndex: "9999",
-      width: "72px",
-      height: "72px",
+      width: "64px",
+      height: "64px",
       borderRadius: "50%",
-      fontSize: "28px",
+      fontSize: "24px",
       fontWeight: "700",
       background: "rgba(14, 16, 30, 0.82)",
       color: "white",
       border: "1px solid rgba(255,255,255,0.18)",
       boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
       cursor: "pointer",
-    } as Partial<CSSStyleDeclaration>);
-
-    btn.onpointerdown = (e) => {
-      e.preventDefault();
-      this.moveForward = true;
-    };
-    btn.onpointerup = () => {
-      this.moveForward = false;
-    };
-    btn.onpointerleave = () => {
-      this.moveForward = false;
-    };
-    btn.onpointercancel = () => {
-      this.moveForward = false;
+      userSelect: "none",
+      WebkitUserSelect: "none",
+      touchAction: "none",
     };
 
-    document.body.appendChild(btn);
-    this.moveBtn = btn;
+    const makeButton = (
+      text: string,
+      style: Partial<CSSStyleDeclaration>,
+      onDown: () => void,
+      onUp: () => void
+    ) => {
+      const btn = document.createElement("button");
+      btn.innerText = text;
+      Object.assign(btn.style, commonStyle, style);
+
+      btn.onpointerdown = (e) => {
+        e.preventDefault();
+        onDown();
+      };
+      btn.onpointerup = () => onUp();
+      btn.onpointerleave = () => onUp();
+      btn.onpointercancel = () => onUp();
+
+      document.body.appendChild(btn);
+      return btn;
+    };
+
+    this.moveForwardBtn = makeButton(
+      "↑",
+      { bottom: "110px", left: "50%", transform: "translateX(-50%)" },
+      () => (this.moveForward = true),
+      () => (this.moveForward = false)
+    );
+
+    this.moveBackwardBtn = makeButton(
+      "↓",
+      { bottom: "30px", left: "50%", transform: "translateX(-50%)" },
+      () => (this.moveBackward = true),
+      () => (this.moveBackward = false)
+    );
+
+    this.moveLeftBtn = makeButton(
+      "←",
+      { bottom: "30px", left: "calc(50% - 80px)", transform: "translateX(-50%)" },
+      () => (this.moveLeft = true),
+      () => (this.moveLeft = false)
+    );
+
+    this.moveRightBtn = makeButton(
+      "→",
+      { bottom: "30px", left: "calc(50% + 80px)", transform: "translateX(-50%)" },
+      () => (this.moveRight = true),
+      () => (this.moveRight = false)
+    );
   }
 
-  private removeMoveButton() {
-    if (!this.moveBtn) return;
-    this.moveBtn.remove();
-    this.moveBtn = undefined;
+  private removeMoveButtons() {
+    this.moveForwardBtn?.remove();
+    this.moveBackwardBtn?.remove();
+    this.moveLeftBtn?.remove();
+    this.moveRightBtn?.remove();
+
+    this.moveForwardBtn = undefined;
+    this.moveBackwardBtn = undefined;
+    this.moveLeftBtn = undefined;
+    this.moveRightBtn = undefined;
   }
 
   private loadBooth() {
@@ -137,24 +209,50 @@ export class BoothModule implements ExperienceModule {
         if (!this.isMounted) return;
 
         const booth = gltf.scene;
-
         booth.updateWorldMatrix(true, true);
 
         const box = new THREE.Box3().setFromObject(booth);
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
+        const minY = box.min.y;
 
-        booth.position.sub(center);
+        console.log("BOOTH BOUNDS", box.min, box.max, size);
 
-        const maxDim = Math.max(size.x, size.y, size.z);
+        // center horizontally, keep floor at y=0
+        booth.position.x -= center.x;
+        booth.position.z -= center.z;
+        booth.position.y -= minY;
+
         const scale = BOOTH_CONFIG.scale ?? 1;
+        booth.scale.setScalar(scale);
 
-        if (maxDim > 0) {
-          booth.scale.setScalar(scale / maxDim);
+        booth.traverse((child) => {
+          if (!(child instanceof THREE.Mesh)) return;
+
+          child.frustumCulled = false;
+
+          const applyMaterial = (material: THREE.Material) => {
+            material.side = THREE.DoubleSide;
+            material.needsUpdate = true;
+          };
+
+          if (Array.isArray(child.material)) {
+            child.material.forEach(applyMaterial);
+          } else {
+            applyMaterial(child.material);
+          }
+        });
+
+        this.booth = booth;
+        this.root.add(booth);
+
+        // remove debug cube after successful load
+        if (this.debugCube) {
+          this.root.remove(this.debugCube);
+          this.debugCube = undefined;
         }
 
-        this.root.add(booth);
-        this.setupCamera();
+        this.setupCamera(size);
       },
       undefined,
       (err) => {
@@ -163,18 +261,27 @@ export class BoothModule implements ExperienceModule {
     );
   }
 
-  private setupCamera() {
+  private setupCamera(size?: THREE.Vector3) {
     if (!this.context) return;
 
     const cam = this.context.camera as THREE.PerspectiveCamera;
 
-    cam.position.set(0, 1.6, 3);
+    const depth = size?.z ?? 10;
+    const width = size?.x ?? 10;
+    const startDistance = Math.max(depth, width) * 0.8;
 
-    // initialize yaw/pitch from current look direction
-    const lookTarget = new THREE.Vector3(0, 1, 0);
+    cam.position.set(0, 1.7, Math.max(8, startDistance));
+    cam.lookAt(0, 1.6, 0);
+    cam.near = 0.01;
+    cam.far = 1000;
+    cam.updateProjectionMatrix();
+
+    const lookTarget = new THREE.Vector3(0, 1.6, 0);
     const dir = lookTarget.clone().sub(cam.position).normalize();
     this.yaw = Math.atan2(-dir.x, -dir.z);
     this.pitch = Math.asin(dir.y);
+
+    console.log("CAMERA POS", cam.position);
   }
 
   update(deltaMs: number): void {
@@ -187,25 +294,45 @@ export class BoothModule implements ExperienceModule {
     );
     cam.quaternion.copy(quat);
 
-    if (this.moveForward) {
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-      forward.y = 0;
-      forward.normalize();
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    forward.y = 0;
+    if (forward.lengthSq() > 0) forward.normalize();
 
-      cam.position.addScaledVector(forward, this.moveSpeed * (deltaMs / 1000));
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
+    right.y = 0;
+    if (right.lengthSq() > 0) right.normalize();
+
+    const move = new THREE.Vector3();
+
+    if (this.moveForward) move.add(forward);
+    if (this.moveBackward) move.sub(forward);
+    if (this.moveRight) move.add(right);
+    if (this.moveLeft) move.sub(right);
+
+    if (move.lengthSq() > 0) {
+      move.normalize();
+      cam.position.addScaledVector(move, this.moveSpeed * (deltaMs / 1000));
     }
+
+    cam.position.y = 1.7;
   }
 
   unmount(parent: THREE.Object3D): void {
     this.isMounted = false;
     this.lookActive = false;
+
     this.moveForward = false;
+    this.moveBackward = false;
+    this.moveLeft = false;
+    this.moveRight = false;
 
     this.detachControls(this.context?.element);
-    this.removeMoveButton();
+    this.removeMoveButtons();
 
     parent.remove(this.root);
     this.root.clear();
+    this.booth = undefined;
+    this.debugCube = undefined;
   }
 
   onDoubleTap(): void {}
