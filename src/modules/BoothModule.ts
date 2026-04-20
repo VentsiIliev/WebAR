@@ -32,6 +32,9 @@ export class BoothModule implements ExperienceModule {
   private moveBackwardBtn?: HTMLButtonElement;
   private moveLeftBtn?: HTMLButtonElement;
   private moveRightBtn?: HTMLButtonElement;
+  private scaleUpBtn?: HTMLButtonElement;
+  private scaleDownBtn?: HTMLButtonElement;
+  private currentScale = 1;
 
   private lightGroup = new THREE.Group();
 
@@ -68,6 +71,7 @@ export class BoothModule implements ExperienceModule {
     parent.add(this.root);
     this.root.clear();
     this.lightGroup.clear();
+    this.currentScale = BOOTH_CONFIG.scale ?? 1;
 
     this.addBoothLights();
     this.addDebugCube();
@@ -75,6 +79,7 @@ export class BoothModule implements ExperienceModule {
     this.loadBooth();
     this.attachControls(context.element);
     this.createMoveButtons();
+    this.createScaleButtons();
   }
 
   private addBoothLights() {
@@ -191,6 +196,64 @@ export class BoothModule implements ExperienceModule {
     );
   }
 
+  private createScaleButtons() {
+    if (this.scaleUpBtn) return;
+
+    const commonStyle: Partial<CSSStyleDeclaration> = {
+      position: "fixed",
+      zIndex: "9999",
+      width: "56px",
+      height: "56px",
+      borderRadius: "50%",
+      fontSize: "22px",
+      fontWeight: "700",
+      background: "rgba(14, 16, 30, 0.82)",
+      color: "white",
+      border: "1px solid rgba(255,255,255,0.18)",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
+      cursor: "pointer",
+      userSelect: "none",
+      WebkitUserSelect: "none",
+      touchAction: "none",
+    };
+
+    const makeButton = (
+      label: string,
+      style: Partial<CSSStyleDeclaration>,
+      onClick: () => void
+    ) => {
+      const btn = document.createElement("button");
+      btn.innerText = label;
+      Object.assign(btn.style, commonStyle, style);
+      btn.onclick = onClick;
+      document.body.appendChild(btn);
+      return btn;
+    };
+
+    this.scaleUpBtn = makeButton(
+      "＋",
+      { right: "20px", bottom: "110px" },
+      () => this.scaleBooth(1.2)
+    );
+
+    this.scaleDownBtn = makeButton(
+      "－",
+      { right: "20px", bottom: "40px" },
+      () => this.scaleBooth(1 / 1.2)
+    );
+  }
+
+  private scaleBooth(factor: number) {
+    if (!this.booth) return;
+
+    this.currentScale *= factor;
+    this.currentScale = THREE.MathUtils.clamp(this.currentScale, 0.01, 50);
+    this.booth.scale.setScalar(this.currentScale);
+    this.boothHelper?.update();
+
+    console.log("BOOTH SCALE:", this.currentScale);
+  }
+
   private removeMoveButtons() {
     this.moveForwardBtn?.remove();
     this.moveBackwardBtn?.remove();
@@ -201,6 +264,13 @@ export class BoothModule implements ExperienceModule {
     this.moveBackwardBtn = undefined;
     this.moveLeftBtn = undefined;
     this.moveRightBtn = undefined;
+  }
+
+  private removeScaleButtons() {
+    this.scaleUpBtn?.remove();
+    this.scaleDownBtn?.remove();
+    this.scaleUpBtn = undefined;
+    this.scaleDownBtn = undefined;
   }
 
   private loadBooth() {
@@ -226,6 +296,7 @@ export class BoothModule implements ExperienceModule {
         booth.position.y -= minY;
 
         const scale = BOOTH_CONFIG.scale ?? 1;
+        this.currentScale = scale;
         booth.scale.setScalar(scale);
 
         booth.traverse((child) => {
@@ -329,6 +400,7 @@ export class BoothModule implements ExperienceModule {
 
     this.detachControls(this.context?.element);
     this.removeMoveButtons();
+    this.removeScaleButtons();
 
     if (this.boothHelper) {
       this.root.remove(this.boothHelper);
