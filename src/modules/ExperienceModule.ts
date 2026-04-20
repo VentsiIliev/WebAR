@@ -4,6 +4,7 @@ export type ExperienceMode = "rubik" | "model" | "placement";
 
 export interface ExperienceModuleContext {
   element: HTMLElement;
+  overlayRoot?: HTMLElement;
   camera: THREE.Camera;
   scene: THREE.Scene;
   renderer: THREE.WebGLRenderer;
