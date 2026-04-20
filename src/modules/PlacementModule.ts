@@ -4,8 +4,6 @@ import type { ExperienceModule, ExperienceModuleContext } from "./ExperienceModu
 import { PlacementController } from "../placement/PlacementController";
 import type { ModelOption } from "../models/modelCatalog";
 
-type ToolMode = "select" | "move" | "rotate" | "scale";
-
 type PlaceableGroup = THREE.Group & {
   userData: {
     helper?: THREE.BoxHelper;
@@ -23,24 +21,13 @@ export class PlacementModule implements ExperienceModule {
   private canPlace = false;
   private statusEl?: HTMLDivElement;
   private toolbarEl?: HTMLDivElement;
+  private controlsPanelEl?: HTMLDivElement;
   private startArHandler?: () => void;
-  private overlayTouchStartHandler?: (event: TouchEvent) => void;
-  private overlayTouchMoveHandler?: (event: TouchEvent) => void;
-  private overlayTouchEndHandler?: (event: TouchEvent) => void;
-
-  private mode: ToolMode = "select";
-  private scaleUp = true;
 
   private placedObjects: PlaceableGroup[] = [];
   private selectedObject?: PlaceableGroup;
   private pendingObject?: PlaceableGroup;
-
-  private dragging = false;
-  private touchMoved = false;
-  private touchStartX = 0;
-  private touchStartY = 0;
-  private lastTouchX = 0;
-  private lastTouchY = 0;
+  private controlsVisible = false;
 
   constructor(private selectedModel: ModelOption) {}
 
@@ -49,7 +36,6 @@ export class PlacementModule implements ExperienceModule {
     parent.add(this.root);
 
     this.createStatusOverlay(context.element);
-    this.setMode("select");
     this.setStatus("Loading table…");
 
     this.placement.mount(context.scene, context.renderer);
@@ -65,20 +51,7 @@ export class PlacementModule implements ExperienceModule {
         return;
       }
 
-      if (this.mode === "select") {
-        this.selectNextObject(1);
-      } else if (this.mode === "scale") {
-        const factor = this.scaleUp ? 1.15 : 1 / 1.15;
-        const nextScale = THREE.MathUtils.clamp(this.selectedObject.scale.x * factor, 0.25, 4);
-        this.selectedObject.scale.setScalar(nextScale);
-        this.scaleUp = !this.scaleUp;
-        this.setStatus(`Scale: ${nextScale.toFixed(2)}x`);
-      } else if (this.mode === "move") {
-        this.moveSelectedToReticle();
-      } else if (this.mode === "rotate") {
-        this.selectedObject.rotation.y += Math.PI / 12;
-        this.setStatus("Rotate: turned selected table 15°.");
-      }
+      this.selectNextObject(1);
     });
 
     this.loader.load(
@@ -143,7 +116,6 @@ export class PlacementModule implements ExperienceModule {
       if (!this.toolbarEl) {
         this.createToolbar(overlay || document.body);
       }
-      this.attachOverlayGestures(overlay || this.context!.element);
 
       this.canPlace = false;
       this.setStatus("Move your phone slowly until the keyring appears, then tap the keyring.");
@@ -162,10 +134,10 @@ export class PlacementModule implements ExperienceModule {
       this.placement.unmount(this.context.scene);
     }
 
-    this.detachOverlayGestures(this.context?.overlayRoot || this.context?.element);
     this.toolbarEl?.remove();
     this.statusEl?.remove();
     this.toolbarEl = undefined;
+    this.controlsPanelEl = undefined;
     this.statusEl = undefined;
 
     [...this.placedObjects, this.pendingObject].forEach((obj) => {
@@ -229,38 +201,7 @@ export class PlacementModule implements ExperienceModule {
     this.placedObjects.push(this.pendingObject);
     this.setSelectedObject(this.pendingObject);
     this.pendingObject = undefined;
-    this.setStatus("Table placed. Use toolbar: Select, Move, Rotate, Scale, Add, Remove, Reset.");
-  }
-
-  private moveSelectedToReticle() {
-    if (!this.selectedObject) {
-      this.setStatus("No selected table to move.");
-      return;
-    }
-
-    const pos = new THREE.Vector3();
-    const ok = this.placement.getReticlePose(pos);
-    if (!ok) {
-      this.setStatus("Move: find the keyring first.");
-      return;
-    }
-
-    this.selectedObject.position.copy(pos);
-    this.setStatus("Move: selected table moved to the keyring.");
-  }
-
-  private setMode(mode: ToolMode) {
-    this.mode = mode;
-    this.updateToolbarState();
-    if (mode === "select") {
-      this.setStatus("Mode: SELECT. Swipe left/right to cycle through tables.");
-    } else if (mode === "move") {
-      this.setStatus("Mode: MOVE. Swipe to move the selected table precisely.");
-    } else if (mode === "rotate") {
-      this.setStatus("Mode: ROTATE. Swipe left/right to rotate the selected table.");
-    } else {
-      this.setStatus("Mode: SCALE. Tap screen to resize the selected table.");
-    }
+    this.setStatus("Table placed. Use the controls button to open move, rotate, and scale arrows.");
   }
 
   private addObject() {
@@ -332,86 +273,47 @@ export class PlacementModule implements ExperienceModule {
     this.setStatus(`Selected table ${nextIndex + 1} of ${this.placedObjects.length}.`);
   }
 
-  private attachOverlayGestures(el?: HTMLElement) {
-    if (!el || this.overlayTouchStartHandler) return;
-
-    this.overlayTouchStartHandler = (event: TouchEvent) => {
-      if ((event.target as HTMLElement)?.closest("button")) return;
-      if (!this.selectedObject || this.pendingObject || event.touches.length !== 1) return;
-      if (this.mode !== "move" && this.mode !== "rotate" && this.mode !== "select") return;
-
-      this.dragging = true;
-      this.touchMoved = false;
-      this.touchStartX = this.lastTouchX = event.touches[0].clientX;
-      this.touchStartY = this.lastTouchY = event.touches[0].clientY;
-    };
-
-    this.overlayTouchMoveHandler = (event: TouchEvent) => {
-      if (!this.dragging || !this.selectedObject || event.touches.length !== 1) return;
-      if ((event.target as HTMLElement)?.closest("button")) return;
-
-      const touch = event.touches[0];
-      const dx = touch.clientX - this.lastTouchX;
-      const dy = touch.clientY - this.lastTouchY;
-      const totalDx = touch.clientX - this.touchStartX;
-      const totalDy = touch.clientY - this.touchStartY;
-      this.lastTouchX = touch.clientX;
-      this.lastTouchY = touch.clientY;
-      this.touchMoved = this.touchMoved || Math.abs(totalDx) > 6 || Math.abs(totalDy) > 6;
-
-      if (this.mode === "move" && this.context) {
-        event.preventDefault();
-        const camera = this.context.camera;
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-        forward.y = 0;
-        if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
-        forward.normalize();
-        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
-        const moveScale = 0.0018;
-        this.selectedObject.position.addScaledVector(right, dx * moveScale);
-        this.selectedObject.position.addScaledVector(forward, -dy * moveScale);
-      } else if (this.mode === "rotate") {
-        event.preventDefault();
-        this.selectedObject.rotation.y += dx * 0.01;
-      }
-    };
-
-    this.overlayTouchEndHandler = (event: TouchEvent) => {
-      if (!this.dragging) return;
-      this.dragging = false;
-
-      const totalDx = this.lastTouchX - this.touchStartX;
-      const totalDy = this.lastTouchY - this.touchStartY;
-      if (this.mode === "select") {
-        if (Math.abs(totalDx) > 24 && Math.abs(totalDx) > Math.abs(totalDy)) {
-          this.selectNextObject(totalDx > 0 ? 1 : -1);
-        } else if (!this.touchMoved) {
-          this.selectNextObject(1);
-        }
-      }
-    };
-
-    el.addEventListener("touchstart", this.overlayTouchStartHandler, { passive: false });
-    el.addEventListener("touchmove", this.overlayTouchMoveHandler, { passive: false });
-    el.addEventListener("touchend", this.overlayTouchEndHandler);
-    el.addEventListener("touchcancel", this.overlayTouchEndHandler);
+  private moveSelected(dx: number, dz: number) {
+    if (!this.selectedObject || !this.context) {
+      this.setStatus("No selected table to move.");
+      return;
+    }
+    const camera = this.context.camera;
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    forward.y = 0;
+    if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+    forward.normalize();
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+    this.selectedObject.position.addScaledVector(right, dx);
+    this.selectedObject.position.addScaledVector(forward, dz);
+    this.setStatus("Moved selected table.");
   }
 
-  private detachOverlayGestures(el?: HTMLElement) {
-    if (!el) return;
-    if (this.overlayTouchStartHandler) {
-      el.removeEventListener("touchstart", this.overlayTouchStartHandler);
-      this.overlayTouchStartHandler = undefined;
+  private rotateSelected(deltaRadians: number) {
+    if (!this.selectedObject) {
+      this.setStatus("No selected table to rotate.");
+      return;
     }
-    if (this.overlayTouchMoveHandler) {
-      el.removeEventListener("touchmove", this.overlayTouchMoveHandler);
-      this.overlayTouchMoveHandler = undefined;
+    this.selectedObject.rotation.y += deltaRadians;
+    this.setStatus("Rotated selected table.");
+  }
+
+  private scaleSelected(factor: number) {
+    if (!this.selectedObject) {
+      this.setStatus("No selected table to scale.");
+      return;
     }
-    if (this.overlayTouchEndHandler) {
-      el.removeEventListener("touchend", this.overlayTouchEndHandler);
-      el.removeEventListener("touchcancel", this.overlayTouchEndHandler);
-      this.overlayTouchEndHandler = undefined;
+    const nextScale = THREE.MathUtils.clamp(this.selectedObject.scale.x * factor, 0.25, 4);
+    this.selectedObject.scale.setScalar(nextScale);
+    this.setStatus(`Scale: ${nextScale.toFixed(2)}x`);
+  }
+
+  private toggleControlsPanel() {
+    this.controlsVisible = !this.controlsVisible;
+    if (this.controlsPanelEl) {
+      this.controlsPanelEl.style.display = this.controlsVisible ? "grid" : "none";
     }
+    this.setStatus(this.controlsVisible ? "Controls opened." : "Controls hidden.");
   }
 
   private createStatusOverlay(el: HTMLElement) {
@@ -445,9 +347,10 @@ export class PlacementModule implements ExperienceModule {
       transform: "translateX(-50%)",
       zIndex: "9999",
       display: "flex",
-      gap: "8px",
+      gap: "10px",
       flexWrap: "wrap",
       justifyContent: "center",
+      alignItems: "center",
       padding: "10px",
       borderRadius: "18px",
       background: "rgba(14, 16, 30, 0.82)",
@@ -456,45 +359,77 @@ export class PlacementModule implements ExperienceModule {
       pointerEvents: "auto",
     } as Partial<CSSStyleDeclaration>);
 
-    const makeButton = (label: string, onClick: () => void, role?: string) => {
+    const makeButton = (label: string, onClick: () => void, grow = false) => {
       const btn = document.createElement("button");
       btn.textContent = label;
-      if (role) btn.dataset.role = role;
       Object.assign(btn.style, {
-        padding: "10px 14px",
-        borderRadius: "12px",
+        minWidth: grow ? "90px" : "auto",
+        padding: grow ? "12px 18px" : "10px 14px",
+        borderRadius: "14px",
         border: "1px solid rgba(255,255,255,0.18)",
-        background: "rgba(255,255,255,0.06)",
+        background: grow ? "linear-gradient(135deg, #6a5cff, #00aaff)" : "rgba(255,255,255,0.06)",
         color: "white",
-        fontSize: "13px",
-        fontWeight: "600",
+        fontSize: grow ? "14px" : "13px",
+        fontWeight: "700",
         cursor: "pointer",
         pointerEvents: "auto",
       } as Partial<CSSStyleDeclaration>);
       btn.onclick = onClick;
       this.toolbarEl!.appendChild(btn);
+      return btn;
     };
 
-    makeButton("Select", () => this.setMode("select"), "select");
-    makeButton("Move", () => this.setMode("move"), "move");
-    makeButton("Rotate", () => this.setMode("rotate"), "rotate");
-    makeButton("Scale", () => this.setMode("scale"), "scale");
+    makeButton(this.controlsVisible ? "Hide Controls" : "Show Controls", () => {
+      this.toggleControlsPanel();
+      if (this.toolbarEl) {
+        const firstButton = this.toolbarEl.querySelector("button");
+        if (firstButton) firstButton.textContent = this.controlsVisible ? "Hide Controls" : "Show Controls";
+      }
+    }, true);
+
+    makeButton("Select", () => this.selectNextObject(1));
     makeButton("Add", () => this.addObject());
     makeButton("Remove", () => this.removeSelected());
     makeButton("Reset", () => this.resetScene());
 
-    el.appendChild(this.toolbarEl);
-    this.updateToolbarState();
-  }
+    this.controlsPanelEl = document.createElement("div");
+    Object.assign(this.controlsPanelEl.style, {
+      width: "100%",
+      display: "none",
+      gridTemplateColumns: "repeat(4, minmax(54px, 1fr))",
+      gap: "8px",
+      marginTop: "8px",
+    } as Partial<CSSStyleDeclaration>);
 
-  private updateToolbarState() {
-    if (!this.toolbarEl) return;
-    this.toolbarEl.querySelectorAll("button[data-role]").forEach((node) => {
-      const btn = node as HTMLButtonElement;
-      const active = btn.dataset.role === this.mode;
-      btn.style.background = active ? "linear-gradient(135deg, #6a5cff, #00aaff)" : "rgba(255,255,255,0.06)";
-      btn.style.borderColor = active ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.18)";
-    });
+    const makeControl = (label: string, onClick: () => void) => {
+      const btn = document.createElement("button");
+      btn.textContent = label;
+      Object.assign(btn.style, {
+        padding: "12px 10px",
+        borderRadius: "14px",
+        border: "1px solid rgba(255,255,255,0.18)",
+        background: "rgba(255,255,255,0.08)",
+        color: "white",
+        fontSize: "18px",
+        fontWeight: "700",
+        cursor: "pointer",
+        pointerEvents: "auto",
+      } as Partial<CSSStyleDeclaration>);
+      btn.onclick = onClick;
+      this.controlsPanelEl!.appendChild(btn);
+    };
+
+    makeControl("↑", () => this.moveSelected(0, -0.05));
+    makeControl("↶", () => this.rotateSelected(-Math.PI / 16));
+    makeControl("↷", () => this.rotateSelected(Math.PI / 16));
+    makeControl("＋", () => this.scaleSelected(1.1));
+    makeControl("←", () => this.moveSelected(-0.05, 0));
+    makeControl("↓", () => this.moveSelected(0, 0.05));
+    makeControl("→", () => this.moveSelected(0.05, 0));
+    makeControl("－", () => this.scaleSelected(1 / 1.1));
+
+    this.toolbarEl.appendChild(this.controlsPanelEl);
+    el.appendChild(this.toolbarEl);
   }
 
   private setStatus(msg: string) {
