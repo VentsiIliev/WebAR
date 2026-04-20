@@ -5,6 +5,6 @@ export type BoothConfig = {
 
 // 👉 Change ONLY this file to swap booth model
 export const BOOTH_CONFIG: BoothConfig = {
-  path: "/models/boot2.glb",
+  path: "/models/booth.glb",
   scale: 1
 };
