@@ -35,7 +35,7 @@ export class PlacementController {
     this.onSelectEnd = handler;
   }
 
-  async startAR(): Promise<{ ok: boolean; reason?: string }> {
+  async startAR(overlayRoot?: HTMLElement): Promise<{ ok: boolean; reason?: string }> {
     if (!this.renderer) return { ok: false, reason: "Renderer not ready" };
     if (!navigator.xr) return { ok: false, reason: "WebXR not available" };
 
@@ -45,6 +45,8 @@ export class PlacementController {
     try {
       this.session = await navigator.xr.requestSession("immersive-ar", {
         requiredFeatures: ["hit-test", "local-floor"],
+        optionalFeatures: ["dom-overlay"],
+        domOverlay: overlayRoot ? { root: overlayRoot } : undefined,
       });
 
       this.renderer.xr.enabled = true;
