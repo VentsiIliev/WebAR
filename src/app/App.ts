@@ -13,11 +13,18 @@ export class App {
   private videoEl?: HTMLVideoElement;
 
   async start(container: HTMLElement) {
+    const overlayRoot = document.createElement("div");
+    overlayRoot.style.position = "fixed";
+    overlayRoot.style.inset = "0";
+    overlayRoot.style.pointerEvents = "none";
+    overlayRoot.style.zIndex = "9999";
+    document.body.appendChild(overlayRoot);
+
     const video = await this.cameraManager.start();
     this.videoEl = video;
     container.appendChild(video);
 
-    this.scene = new SceneManager(container);
+    this.scene = new SceneManager(container, overlayRoot);
     this.scene.start();
 
     this.scene.setModule(new PlacementModule(this.selectedModel));
