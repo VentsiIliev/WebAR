@@ -16,6 +16,9 @@ export class BoothModule implements ExperienceModule {
   private booth?: THREE.Object3D;
   private debugCube?: THREE.Mesh;
   private boothHelper?: THREE.BoxHelper;
+  private boothBounds?: THREE.Box3;
+  private eyeHeight = 1.7;
+  private movementMargin = 0.35;
 
   private yaw = 0;
   private pitch = 0;
@@ -24,8 +27,6 @@ export class BoothModule implements ExperienceModule {
   private moveBackward = false;
   private moveLeft = false;
   private moveRight = false;
-  private moveUp = false;
-  private moveDown = false;
   private moveSpeed = 4;
 
   private lookActive = false;
@@ -36,8 +37,6 @@ export class BoothModule implements ExperienceModule {
   private moveBackwardBtn?: HTMLButtonElement;
   private moveLeftBtn?: HTMLButtonElement;
   private moveRightBtn?: HTMLButtonElement;
-  private moveUpBtn?: HTMLButtonElement;
-  private moveDownBtn?: HTMLButtonElement;
   private scaleUpBtn?: HTMLButtonElement;
   private scaleDownBtn?: HTMLButtonElement;
   private currentScale = 1;
@@ -205,20 +204,6 @@ export class BoothModule implements ExperienceModule {
       () => (this.moveRight = true),
       () => (this.moveRight = false)
     );
-
-    this.moveUpBtn = makeButton(
-      "⬆",
-      { right: "100px", bottom: "110px" },
-      () => (this.moveUp = true),
-      () => (this.moveUp = false)
-    );
-
-    this.moveDownBtn = makeButton(
-      "⬇",
-      { right: "100px", bottom: "30px" },
-      () => (this.moveDown = true),
-      () => (this.moveDown = false)
-    );
   }
 
   private createScaleButtons() {
@@ -275,6 +260,7 @@ export class BoothModule implements ExperienceModule {
     this.currentScale = THREE.MathUtils.clamp(this.currentScale, 0.01, 50);
     this.booth.scale.setScalar(this.currentScale);
     this.boothHelper?.update();
+    this.refreshBoothBounds();
 
     console.log("BOOTH SCALE:", this.currentScale);
   }
@@ -284,15 +270,11 @@ export class BoothModule implements ExperienceModule {
     this.moveBackwardBtn?.remove();
     this.moveLeftBtn?.remove();
     this.moveRightBtn?.remove();
-    this.moveUpBtn?.remove();
-    this.moveDownBtn?.remove();
 
     this.moveForwardBtn = undefined;
     this.moveBackwardBtn = undefined;
     this.moveLeftBtn = undefined;
     this.moveRightBtn = undefined;
-    this.moveUpBtn = undefined;
-    this.moveDownBtn = undefined;
   }
 
   private removeScaleButtons() {
@@ -300,6 +282,12 @@ export class BoothModule implements ExperienceModule {
     this.scaleDownBtn?.remove();
     this.scaleUpBtn = undefined;
     this.scaleDownBtn = undefined;
+  }
+
+  private refreshBoothBounds() {
+    if (!this.booth) return;
+    this.booth.updateWorldMatrix(true, true);
+    this.boothBounds = new THREE.Box3().setFromObject(this.booth);
   }
 
   private loadBooth() {
@@ -336,7 +324,6 @@ export class BoothModule implements ExperienceModule {
         this.currentScale = scale;
         booth.scale.setScalar(scale);
 
-        // KEEP ORIGINAL MATERIALS, just ensure visibility
         booth.traverse((child) => {
           if (!(child instanceof THREE.Mesh)) return;
           child.frustumCulled = false;
@@ -364,7 +351,8 @@ export class BoothModule implements ExperienceModule {
           this.debugCube = undefined;
         }
 
-        this.setupCamera(size);
+        this.refreshBoothBounds();
+        this.setupCamera();
       },
       (event) => {
         if (event.total && event.total > 0) {
@@ -381,25 +369,23 @@ export class BoothModule implements ExperienceModule {
     );
   }
 
-  private setupCamera(size?: THREE.Vector3) {
-    if (!this.context) return;
+  private setupCamera() {
+    if (!this.context || !this.boothBounds) return;
 
     const cam = this.context.camera as THREE.PerspectiveCamera;
-    const depth = size?.z ?? 10;
-    const width = size?.x ?? 10;
-    const height = size?.y ?? 4;
-    const startDistance = Math.max(depth, width) * 1.5;
+    const center = this.boothBounds.getCenter(new THREE.Vector3());
+    const size = this.boothBounds.getSize(new THREE.Vector3());
 
-    cam.position.set(0, Math.max(1.7, height * 0.4), Math.max(12, startDistance));
-    cam.lookAt(0, Math.max(1.6, height * 0.3), 0);
+    this.eyeHeight = Math.max(1.6, Math.min(1.9, size.y * 0.22));
+
+    cam.position.set(center.x, this.eyeHeight, center.z);
+    cam.lookAt(center.x, this.eyeHeight, center.z - 1);
     cam.near = 0.01;
     cam.far = 1000;
     cam.updateProjectionMatrix();
 
-    const lookTarget = new THREE.Vector3(0, Math.max(1.6, height * 0.3), 0);
-    const dir = lookTarget.clone().sub(cam.position).normalize();
-    this.yaw = Math.atan2(-dir.x, -dir.z);
-    this.pitch = Math.asin(dir.y);
+    this.yaw = 0;
+    this.pitch = 0;
 
     console.log("CAMERA POS", cam.position);
   }
@@ -415,24 +401,33 @@ export class BoothModule implements ExperienceModule {
     cam.quaternion.copy(quat);
 
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    forward.y = 0;
     if (forward.lengthSq() > 0) forward.normalize();
 
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
+    right.y = 0;
     if (right.lengthSq() > 0) right.normalize();
 
-    const up = new THREE.Vector3(0, 1, 0);
     const move = new THREE.Vector3();
 
     if (this.moveForward) move.add(forward);
     if (this.moveBackward) move.sub(forward);
     if (this.moveRight) move.add(right);
     if (this.moveLeft) move.sub(right);
-    if (this.moveUp) move.add(up);
-    if (this.moveDown) move.sub(up);
 
     if (move.lengthSq() > 0) {
       move.normalize();
       cam.position.addScaledVector(move, this.moveSpeed * (deltaMs / 1000));
+    }
+
+    if (this.boothBounds) {
+      const min = this.boothBounds.min;
+      const max = this.boothBounds.max;
+      const m = this.movementMargin;
+
+      cam.position.x = THREE.MathUtils.clamp(cam.position.x, min.x + m, max.x - m);
+      cam.position.z = THREE.MathUtils.clamp(cam.position.z, min.z + m, max.z - m);
+      cam.position.y = this.eyeHeight;
     }
 
     this.boothHelper?.update();
@@ -446,8 +441,6 @@ export class BoothModule implements ExperienceModule {
     this.moveBackward = false;
     this.moveLeft = false;
     this.moveRight = false;
-    this.moveUp = false;
-    this.moveDown = false;
 
     this.detachControls(this.context?.element);
     this.removeMoveButtons();
@@ -461,6 +454,7 @@ export class BoothModule implements ExperienceModule {
     parent.remove(this.root);
     this.root.clear();
     this.booth = undefined;
+    this.boothBounds = undefined;
     this.debugCube = undefined;
   }
 
