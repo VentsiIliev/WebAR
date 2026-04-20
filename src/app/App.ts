@@ -4,14 +4,18 @@ import { SceneManager } from "../scene/SceneManager";
 import { PlacementModule } from "../modules/PlacementModule";
 import { GenericModelModule } from "../modules/GenericModelModule";
 import { MODEL_CATALOG, ModelOption } from "../models/modelCatalog";
+import { GestureController } from "../interaction/GestureController";
 
 export class App {
   private cameraManager = new CameraManager();
   private tracker = new MarkerTracker();
   private scene!: SceneManager;
+  private gestures = new GestureController();
 
   private selectedModel: ModelOption = MODEL_CATALOG[0];
   private videoEl?: HTMLVideoElement;
+  private lastTap = 0;
+  private mode: "menu" | "viewer" | "ar" = "menu";
 
   async start(container: HTMLElement) {
     const overlayRoot = document.createElement("div");
@@ -46,15 +50,6 @@ export class App {
       btn.style.cursor = "pointer";
       btn.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)";
       btn.style.transition = "all 0.2s ease";
-      btn.onmousedown = () => {
-        btn.style.transform = "translate(-50%, -50%) scale(0.95)";
-      };
-      btn.onmouseup = () => {
-        btn.style.transform = "translate(-50%, -50%) scale(1)";
-      };
-      btn.onmouseleave = () => {
-        btn.style.transform = "translate(-50%, -50%) scale(1)";
-      };
     };
 
     const arBtn = document.createElement("button");
@@ -64,8 +59,6 @@ export class App {
     const viewerBtn = document.createElement("button");
     viewerBtn.innerText = "Viewer";
     stylePrimaryButton(viewerBtn, "calc(50% + 88px)", "linear-gradient(135deg, #ff7a18, #ff3d77)");
-    viewerBtn.style.padding = "16px 32px";
-    viewerBtn.style.fontSize = "18px";
 
     const backBtn = document.createElement("button");
     backBtn.innerText = "Back";
@@ -73,87 +66,64 @@ export class App {
     backBtn.style.top = "20px";
     backBtn.style.left = "20px";
     backBtn.style.zIndex = "1000";
-    backBtn.style.padding = "12px 18px";
-    backBtn.style.fontSize = "15px";
-    backBtn.style.fontWeight = "600";
-    backBtn.style.borderRadius = "12px";
-    backBtn.style.background = "rgba(14, 16, 30, 0.82)";
-    backBtn.style.color = "white";
-    backBtn.style.border = "1px solid rgba(255,255,255,0.18)";
-    backBtn.style.cursor = "pointer";
-    backBtn.style.boxShadow = "0 8px 24px rgba(0,0,0,0.28)";
     backBtn.style.display = "none";
 
-    const showLaunchMenu = async () => {
+    const handleTap = (e: PointerEvent) => {
+      if (this.mode !== "viewer") return;
+      const now = performance.now();
+      if (now - this.lastTap < 300) {
+        this.scene.onDoubleTap();
+        this.lastTap = 0;
+      } else {
+        this.lastTap = now;
+      }
+    };
+
+    container.addEventListener("pointerup", handleTap);
+
+    const showMenu = async () => {
+      this.mode = "menu";
+      this.gestures.detach();
       arBtn.style.display = "block";
-      arBtn.style.opacity = "1";
-      arBtn.style.pointerEvents = "auto";
       viewerBtn.style.display = "block";
-      viewerBtn.style.opacity = "1";
-      viewerBtn.style.pointerEvents = "auto";
       backBtn.style.display = "none";
 
       this.scene.setModule(new PlacementModule(this.selectedModel));
 
-      if (!this.videoEl?.srcObject) {
-        const newVideo = await this.cameraManager.start();
-        this.videoEl = newVideo;
-        container.insertBefore(newVideo, container.firstChild);
-      }
-
-      if (this.videoEl) {
-        this.videoEl.style.display = "block";
-      }
-
+      const video = await this.cameraManager.start();
+      this.videoEl = video;
+      container.insertBefore(video, container.firstChild);
       await this.tracker.start();
     };
 
-    const hideLaunchMenu = () => {
-      arBtn.style.opacity = "0";
-      arBtn.style.pointerEvents = "none";
-      viewerBtn.style.opacity = "0";
-      viewerBtn.style.pointerEvents = "none";
+    const hideMenu = () => {
       arBtn.style.display = "none";
       viewerBtn.style.display = "none";
       backBtn.style.display = "block";
     };
 
     arBtn.onclick = () => {
+      this.mode = "ar";
+      this.gestures.detach();
       this.tracker.stop();
-
-      if (this.videoEl?.srcObject) {
-        const stream = this.videoEl.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => track.stop());
-        this.videoEl.srcObject = null;
-      }
-
-      if (this.videoEl) {
-        this.videoEl.style.display = "none";
-      }
-
-      hideLaunchMenu();
+      this.videoEl?.srcObject && (this.videoEl.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+      this.videoEl && (this.videoEl.style.display = "none");
+      hideMenu();
       container.dispatchEvent(new Event("start-ar"));
     };
 
     viewerBtn.onclick = () => {
+      this.mode = "viewer";
       this.tracker.stop();
-
-      if (this.videoEl?.srcObject) {
-        const stream = this.videoEl.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => track.stop());
-        this.videoEl.srcObject = null;
-      }
-
-      if (this.videoEl) {
-        this.videoEl.style.display = "none";
-      }
-
-      hideLaunchMenu();
+      this.videoEl?.srcObject && (this.videoEl.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+      this.videoEl && (this.videoEl.style.display = "none");
+      hideMenu();
       this.scene.setModule(new GenericModelModule(this.selectedModel));
+      this.gestures.attach(this.scene.getGestureTarget(), container);
     };
 
     backBtn.onclick = async () => {
-      await showLaunchMenu();
+      await showMenu();
     };
 
     container.appendChild(arBtn);
