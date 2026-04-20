@@ -23,20 +23,17 @@ export class BoothModule implements ExperienceModule {
   private yaw = 0;
   private pitch = 0;
 
-  private moveForward = false;
-  private moveBackward = false;
-  private moveLeft = false;
-  private moveRight = false;
   private moveSpeed = 4;
+  private joystickX = 0;
+  private joystickY = 0;
 
   private lookActive = false;
   private lastX = 0;
   private lastY = 0;
 
-  private moveForwardBtn?: HTMLButtonElement;
-  private moveBackwardBtn?: HTMLButtonElement;
-  private moveLeftBtn?: HTMLButtonElement;
-  private moveRightBtn?: HTMLButtonElement;
+  private joystickBase?: HTMLDivElement;
+  private joystickKnob?: HTMLDivElement;
+  private joystickPointerId?: number;
   private scaleUpBtn?: HTMLButtonElement;
   private scaleDownBtn?: HTMLButtonElement;
   private currentScale = 1;
@@ -49,7 +46,7 @@ export class BoothModule implements ExperienceModule {
   }
 
   private onPointerDown = (e: PointerEvent) => {
-    if ((e.target as HTMLElement)?.closest("button")) return;
+    if ((e.target as HTMLElement)?.closest("button") || (e.target as HTMLElement)?.closest("[data-joystick='base']")) return;
 
     this.lookActive = true;
     this.lastX = e.clientX;
@@ -88,7 +85,7 @@ export class BoothModule implements ExperienceModule {
 
     this.loadBooth();
     this.attachControls(context.element);
-    this.createMoveButtons();
+    this.createJoystick();
     this.createScaleButtons();
   }
 
@@ -134,76 +131,105 @@ export class BoothModule implements ExperienceModule {
     el.removeEventListener("pointerleave", this.onPointerUp);
   }
 
-  private createMoveButtons() {
-    if (this.moveForwardBtn) return;
+  private createJoystick() {
+    if (this.joystickBase) return;
 
-    const commonStyle: Partial<CSSStyleDeclaration> = {
+    const base = document.createElement("div");
+    base.dataset.joystick = "base";
+    Object.assign(base.style, {
       position: "fixed",
-      zIndex: "9999",
-      width: "64px",
-      height: "64px",
+      left: "24px",
+      bottom: "24px",
+      width: "120px",
+      height: "120px",
       borderRadius: "50%",
-      fontSize: "24px",
-      fontWeight: "700",
-      background: "rgba(14, 16, 30, 0.82)",
-      color: "white",
+      background: "rgba(14, 16, 30, 0.50)",
       border: "1px solid rgba(255,255,255,0.18)",
       boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
-      cursor: "pointer",
-      userSelect: "none",
-      WebkitUserSelect: "none",
+      zIndex: "9999",
       touchAction: "none",
+      pointerEvents: "auto",
+    } as Partial<CSSStyleDeclaration>);
+
+    const knob = document.createElement("div");
+    Object.assign(knob.style, {
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      width: "52px",
+      height: "52px",
+      transform: "translate(-50%, -50%)",
+      borderRadius: "50%",
+      background: "rgba(255,255,255,0.88)",
+      boxShadow: "0 6px 18px rgba(0,0,0,0.22)",
+      pointerEvents: "none",
+    } as Partial<CSSStyleDeclaration>);
+
+    const resetJoystick = () => {
+      this.joystickX = 0;
+      this.joystickY = 0;
+      this.joystickPointerId = undefined;
+      knob.style.left = "50%";
+      knob.style.top = "50%";
     };
 
-    const makeButton = (
-      text: string,
-      style: Partial<CSSStyleDeclaration>,
-      onDown: () => void,
-      onUp: () => void
-    ) => {
-      const btn = document.createElement("button");
-      btn.innerText = text;
-      Object.assign(btn.style, commonStyle, style);
+    const updateJoystick = (clientX: number, clientY: number) => {
+      const rect = base.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
+      const radius = rect.width * 0.33;
+      const dist = Math.hypot(dx, dy);
+      const clamped = dist > radius ? radius / dist : 1;
+      const px = dx * clamped;
+      const py = dy * clamped;
 
-      btn.onpointerdown = (e) => {
-        e.preventDefault();
-        onDown();
-      };
-      btn.onpointerup = () => onUp();
-      btn.onpointerleave = () => onUp();
-      btn.onpointercancel = () => onUp();
+      this.joystickX = px / radius;
+      this.joystickY = py / radius;
 
-      document.body.appendChild(btn);
-      return btn;
+      knob.style.left = `calc(50% + ${px}px)`;
+      knob.style.top = `calc(50% + ${py}px)`;
     };
 
-    this.moveForwardBtn = makeButton(
-      "↑",
-      { bottom: "110px", left: "50%", transform: "translateX(-50%)" },
-      () => (this.moveForward = true),
-      () => (this.moveForward = false)
-    );
+    base.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      this.joystickPointerId = e.pointerId;
+      updateJoystick(e.clientX, e.clientY);
+      base.setPointerCapture(e.pointerId);
+    });
 
-    this.moveBackwardBtn = makeButton(
-      "↓",
-      { bottom: "30px", left: "50%", transform: "translateX(-50%)" },
-      () => (this.moveBackward = true),
-      () => (this.moveBackward = false)
-    );
+    base.addEventListener("pointermove", (e) => {
+      if (this.joystickPointerId !== e.pointerId) return;
+      e.preventDefault();
+      updateJoystick(e.clientX, e.clientY);
+    });
 
-    this.moveLeftBtn = makeButton(
-      "←",
-      { bottom: "30px", left: "calc(50% - 80px)", transform: "translateX(-50%)" },
-      () => (this.moveLeft = true),
-      () => (this.moveLeft = false)
-    );
+    const end = (e: PointerEvent) => {
+      if (this.joystickPointerId !== e.pointerId) return;
+      e.preventDefault();
+      resetJoystick();
+      if (base.hasPointerCapture(e.pointerId)) base.releasePointerCapture(e.pointerId);
+    };
 
-    this.moveRightBtn = makeButton(
-      "→",
-      { bottom: "30px", left: "calc(50% + 80px)", transform: "translateX(-50%)" },
-      () => (this.moveRight = true),
-      () => (this.moveRight = false)
-    );
+    base.addEventListener("pointerup", end);
+    base.addEventListener("pointercancel", end);
+    base.addEventListener("pointerleave", end);
+
+    base.appendChild(knob);
+    document.body.appendChild(base);
+
+    this.joystickBase = base;
+    this.joystickKnob = knob;
+  }
+
+  private removeJoystick() {
+    this.joystickBase?.remove();
+    this.joystickBase = undefined;
+    this.joystickKnob = undefined;
+    this.joystickPointerId = undefined;
+    this.joystickX = 0;
+    this.joystickY = 0;
   }
 
   private createScaleButtons() {
@@ -263,18 +289,6 @@ export class BoothModule implements ExperienceModule {
     this.refreshBoothBounds();
 
     console.log("BOOTH SCALE:", this.currentScale);
-  }
-
-  private removeMoveButtons() {
-    this.moveForwardBtn?.remove();
-    this.moveBackwardBtn?.remove();
-    this.moveLeftBtn?.remove();
-    this.moveRightBtn?.remove();
-
-    this.moveForwardBtn = undefined;
-    this.moveBackwardBtn = undefined;
-    this.moveLeftBtn = undefined;
-    this.moveRightBtn = undefined;
   }
 
   private removeScaleButtons() {
@@ -409,15 +423,13 @@ export class BoothModule implements ExperienceModule {
     if (right.lengthSq() > 0) right.normalize();
 
     const move = new THREE.Vector3();
+    move.addScaledVector(right, this.joystickX);
+    move.addScaledVector(forward, -this.joystickY);
 
-    if (this.moveForward) move.add(forward);
-    if (this.moveBackward) move.sub(forward);
-    if (this.moveRight) move.add(right);
-    if (this.moveLeft) move.sub(right);
-
-    if (move.lengthSq() > 0) {
+    if (move.lengthSq() > 0.0001) {
+      const intensity = Math.min(1, Math.hypot(this.joystickX, this.joystickY));
       move.normalize();
-      cam.position.addScaledVector(move, this.moveSpeed * (deltaMs / 1000));
+      cam.position.addScaledVector(move, this.moveSpeed * intensity * (deltaMs / 1000));
     }
 
     if (this.boothBounds) {
@@ -437,13 +449,8 @@ export class BoothModule implements ExperienceModule {
     this.isMounted = false;
     this.lookActive = false;
 
-    this.moveForward = false;
-    this.moveBackward = false;
-    this.moveLeft = false;
-    this.moveRight = false;
-
     this.detachControls(this.context?.element);
-    this.removeMoveButtons();
+    this.removeJoystick();
     this.removeScaleButtons();
 
     if (this.boothHelper) {
