@@ -33,6 +33,7 @@ export class PlacementModule implements ExperienceModule {
   private gestureSurface?: HTMLElement;
   private activePointers = new Map<number, { x: number; y: number }>();
   private lastPinchDistance: number | null = null;
+  private lastTwistAngle: number | null = null;
 
   constructor(private selectedModel: ModelOption) {}
 
@@ -201,6 +202,7 @@ export class PlacementModule implements ExperienceModule {
     this.gestureSurface = undefined;
     this.activePointers.clear();
     this.lastPinchDistance = null;
+    this.lastTwistAngle = null;
   }
 
   private onGesturePointerDown = (event: PointerEvent) => {
@@ -208,6 +210,13 @@ export class PlacementModule implements ExperienceModule {
     if ((event.target as HTMLElement)?.closest("button")) return;
 
     this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (this.activePointers.size === 2) {
+      const [a, b] = Array.from(this.activePointers.values());
+      this.lastPinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      this.lastTwistAngle = Math.atan2(b.y - a.y, b.x - a.x);
+    }
+
     this.gestureSurface?.setPointerCapture?.(event.pointerId);
   };
 
@@ -231,6 +240,7 @@ export class PlacementModule implements ExperienceModule {
     if (pointers.length === 2) {
       const [a, b] = pointers;
       const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
 
       if (this.lastPinchDistance !== null) {
         const scaleRatio = distance / Math.max(1, this.lastPinchDistance);
@@ -238,7 +248,15 @@ export class PlacementModule implements ExperienceModule {
         this.scaleSelected(nextFactor, false);
       }
 
+      if (this.lastTwistAngle !== null) {
+        let deltaAngle = angle - this.lastTwistAngle;
+        if (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
+        if (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+        this.rotateSelected(deltaAngle, false);
+      }
+
       this.lastPinchDistance = distance;
+      this.lastTwistAngle = angle;
     }
   };
 
@@ -246,6 +264,7 @@ export class PlacementModule implements ExperienceModule {
     this.activePointers.delete(event.pointerId);
     if (this.activePointers.size < 2) {
       this.lastPinchDistance = null;
+      this.lastTwistAngle = null;
     }
     this.gestureSurface?.releasePointerCapture?.(event.pointerId);
   };
@@ -283,7 +302,7 @@ export class PlacementModule implements ExperienceModule {
     this.placedObjects.push(this.pendingObject);
     this.setSelectedObject(this.pendingObject);
     this.pendingObject = undefined;
-    this.setStatus("Table placed. Open Controls, then swipe to move or pinch to scale.");
+    this.setStatus("Table placed. Open Controls, then swipe to move, pinch to scale, or twist to rotate.");
   }
 
   private addObject() {
@@ -370,13 +389,15 @@ export class PlacementModule implements ExperienceModule {
     this.selectedObject.position.addScaledVector(forward, dz);
   }
 
-  private rotateSelected(deltaRadians: number) {
+  private rotateSelected(deltaRadians: number, announce = true) {
     if (!this.selectedObject) {
       this.setStatus("No selected table to rotate.");
       return;
     }
     this.selectedObject.rotation.y += deltaRadians;
-    this.setStatus("Rotated selected table.");
+    if (announce) {
+      this.setStatus("Rotated selected table.");
+    }
   }
 
   private scaleSelected(factor: number, announce = true) {
@@ -399,7 +420,7 @@ export class PlacementModule implements ExperienceModule {
     if (this.gestureHintEl) {
       this.gestureHintEl.style.display = this.controlsVisible ? "block" : "none";
     }
-    this.setStatus(this.controlsVisible ? "Controls opened. Swipe to move, pinch to scale." : "Controls hidden.");
+    this.setStatus(this.controlsVisible ? "Controls opened. Swipe to move, pinch to scale, twist to rotate." : "Controls hidden.");
   }
 
   private createStatusOverlay(el: HTMLElement) {
@@ -480,34 +501,13 @@ export class PlacementModule implements ExperienceModule {
     Object.assign(this.controlsPanelEl.style, {
       width: "100%",
       display: "none",
-      gridTemplateColumns: "repeat(2, minmax(72px, 1fr))",
+      gridTemplateColumns: "1fr",
       gap: "8px",
       marginTop: "8px",
     } as Partial<CSSStyleDeclaration>);
 
-    const makeControl = (label: string, onClick: () => void) => {
-      const btn = document.createElement("button");
-      btn.textContent = label;
-      Object.assign(btn.style, {
-        padding: "12px 10px",
-        borderRadius: "14px",
-        border: "1px solid rgba(255,255,255,0.18)",
-        background: "rgba(255,255,255,0.08)",
-        color: "white",
-        fontSize: "18px",
-        fontWeight: "700",
-        cursor: "pointer",
-        pointerEvents: "auto",
-      } as Partial<CSSStyleDeclaration>);
-      btn.onclick = onClick;
-      this.controlsPanelEl!.appendChild(btn);
-    };
-
-    makeControl("↶", () => this.rotateSelected(-Math.PI / 32));
-    makeControl("↷", () => this.rotateSelected(Math.PI / 32));
-
     this.gestureHintEl = document.createElement("div");
-    this.gestureHintEl.textContent = "Swipe to move • Pinch to scale";
+    this.gestureHintEl.textContent = "Swipe to move • Pinch to scale • Twist to rotate";
     Object.assign(this.gestureHintEl.style, {
       display: "none",
       width: "100%",
