@@ -342,8 +342,8 @@ export class PlacementModule implements ExperienceModule {
     this.toolbarEl = document.createElement("div");
     Object.assign(this.toolbarEl.style, {
       position: "fixed",
-      top: "20px",
       left: "50%",
+      bottom: "88px",
       transform: "translateX(-50%)",
       zIndex: "9999",
       display: "flex",
@@ -357,6 +357,7 @@ export class PlacementModule implements ExperienceModule {
       backdropFilter: "blur(10px)",
       boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
       pointerEvents: "auto",
+      maxWidth: "calc(100vw - 24px)",
     } as Partial<CSSStyleDeclaration>);
 
     const makeButton = (label: string, onClick: () => void, grow = false) => {
@@ -376,6 +377,56 @@ export class PlacementModule implements ExperienceModule {
       } as Partial<CSSStyleDeclaration>);
       btn.onclick = onClick;
       this.toolbarEl!.appendChild(btn);
+      return btn;
+    };
+
+    const makeRepeatingControl = (label: string, action: () => void) => {
+      const btn = document.createElement("button");
+      let intervalId: number | undefined;
+      let timeoutId: number | undefined;
+
+      Object.assign(btn.style, {
+        padding: "12px 10px",
+        borderRadius: "14px",
+        border: "1px solid rgba(255,255,255,0.18)",
+        background: "rgba(255,255,255,0.08)",
+        color: "white",
+        fontSize: "18px",
+        fontWeight: "700",
+        cursor: "pointer",
+        pointerEvents: "auto",
+        touchAction: "none",
+      } as Partial<CSSStyleDeclaration>);
+      btn.textContent = label;
+
+      const clearTimers = () => {
+        if (timeoutId !== undefined) {
+          window.clearTimeout(timeoutId);
+          timeoutId = undefined;
+        }
+        if (intervalId !== undefined) {
+          window.clearInterval(intervalId);
+          intervalId = undefined;
+        }
+      };
+
+      const start = (e: PointerEvent) => {
+        e.preventDefault();
+        clearTimers();
+        action();
+        timeoutId = window.setTimeout(() => {
+          intervalId = window.setInterval(action, 60);
+        }, 220);
+      };
+
+      const stop = () => clearTimers();
+
+      btn.addEventListener("pointerdown", start);
+      btn.addEventListener("pointerup", stop);
+      btn.addEventListener("pointercancel", stop);
+      btn.addEventListener("pointerleave", stop);
+
+      this.controlsPanelEl!.appendChild(btn);
       return btn;
     };
 
@@ -401,32 +452,14 @@ export class PlacementModule implements ExperienceModule {
       marginTop: "8px",
     } as Partial<CSSStyleDeclaration>);
 
-    const makeControl = (label: string, onClick: () => void) => {
-      const btn = document.createElement("button");
-      btn.textContent = label;
-      Object.assign(btn.style, {
-        padding: "12px 10px",
-        borderRadius: "14px",
-        border: "1px solid rgba(255,255,255,0.18)",
-        background: "rgba(255,255,255,0.08)",
-        color: "white",
-        fontSize: "18px",
-        fontWeight: "700",
-        cursor: "pointer",
-        pointerEvents: "auto",
-      } as Partial<CSSStyleDeclaration>);
-      btn.onclick = onClick;
-      this.controlsPanelEl!.appendChild(btn);
-    };
-
-    makeControl("↑", () => this.moveSelected(0, -0.05));
-    makeControl("↶", () => this.rotateSelected(-Math.PI / 16));
-    makeControl("↷", () => this.rotateSelected(Math.PI / 16));
-    makeControl("＋", () => this.scaleSelected(1.1));
-    makeControl("←", () => this.moveSelected(-0.05, 0));
-    makeControl("↓", () => this.moveSelected(0, 0.05));
-    makeControl("→", () => this.moveSelected(0.05, 0));
-    makeControl("－", () => this.scaleSelected(1 / 1.1));
+    makeRepeatingControl("↑", () => this.moveSelected(0, -0.05));
+    makeRepeatingControl("↶", () => this.rotateSelected(-Math.PI / 32));
+    makeRepeatingControl("↷", () => this.rotateSelected(Math.PI / 32));
+    makeRepeatingControl("＋", () => this.scaleSelected(1.03));
+    makeRepeatingControl("←", () => this.moveSelected(-0.05, 0));
+    makeRepeatingControl("↓", () => this.moveSelected(0, 0.05));
+    makeRepeatingControl("→", () => this.moveSelected(0.05, 0));
+    makeRepeatingControl("－", () => this.scaleSelected(1 / 1.03));
 
     this.toolbarEl.appendChild(this.controlsPanelEl);
     el.appendChild(this.toolbarEl);
