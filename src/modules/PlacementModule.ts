@@ -22,12 +22,17 @@ export class PlacementModule implements ExperienceModule {
   private statusEl?: HTMLDivElement;
   private toolbarEl?: HTMLDivElement;
   private controlsPanelEl?: HTMLDivElement;
+  private gestureHintEl?: HTMLDivElement;
   private startArHandler?: () => void;
 
   private placedObjects: PlaceableGroup[] = [];
   private selectedObject?: PlaceableGroup;
   private pendingObject?: PlaceableGroup;
   private controlsVisible = false;
+
+  private gestureSurface?: HTMLElement;
+  private activePointers = new Map<number, { x: number; y: number }>();
+  private lastPinchDistance: number | null = null;
 
   constructor(private selectedModel: ModelOption) {}
 
@@ -117,6 +122,8 @@ export class PlacementModule implements ExperienceModule {
         this.createToolbar(overlay || document.body);
       }
 
+      this.attachGestureSurface(overlay || this.context!.element);
+
       this.canPlace = false;
       this.setStatus("Move your phone slowly until the keyring appears, then tap the keyring.");
       setTimeout(() => {
@@ -134,10 +141,13 @@ export class PlacementModule implements ExperienceModule {
       this.placement.unmount(this.context.scene);
     }
 
+    this.detachGestureSurface();
+
     this.toolbarEl?.remove();
     this.statusEl?.remove();
     this.toolbarEl = undefined;
     this.controlsPanelEl = undefined;
+    this.gestureHintEl = undefined;
     this.statusEl = undefined;
 
     [...this.placedObjects, this.pendingObject].forEach((obj) => {
@@ -167,6 +177,78 @@ export class PlacementModule implements ExperienceModule {
   getGestureTarget(): THREE.Object3D {
     return this.root;
   }
+
+  private attachGestureSurface(el: HTMLElement) {
+    if (this.gestureSurface === el) return;
+    this.detachGestureSurface();
+    this.gestureSurface = el;
+    el.style.touchAction = "none";
+    el.addEventListener("pointerdown", this.onGesturePointerDown);
+    el.addEventListener("pointermove", this.onGesturePointerMove);
+    el.addEventListener("pointerup", this.onGesturePointerUp);
+    el.addEventListener("pointercancel", this.onGesturePointerUp);
+    el.addEventListener("pointerleave", this.onGesturePointerUp);
+  }
+
+  private detachGestureSurface() {
+    if (!this.gestureSurface) return;
+    const el = this.gestureSurface;
+    el.removeEventListener("pointerdown", this.onGesturePointerDown);
+    el.removeEventListener("pointermove", this.onGesturePointerMove);
+    el.removeEventListener("pointerup", this.onGesturePointerUp);
+    el.removeEventListener("pointercancel", this.onGesturePointerUp);
+    el.removeEventListener("pointerleave", this.onGesturePointerUp);
+    this.gestureSurface = undefined;
+    this.activePointers.clear();
+    this.lastPinchDistance = null;
+  }
+
+  private onGesturePointerDown = (event: PointerEvent) => {
+    if (!this.controlsVisible || !this.selectedObject || this.pendingObject) return;
+    if ((event.target as HTMLElement)?.closest("button")) return;
+
+    this.activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    this.gestureSurface?.setPointerCapture?.(event.pointerId);
+  };
+
+  private onGesturePointerMove = (event: PointerEvent) => {
+    if (!this.controlsVisible || !this.selectedObject || this.pendingObject) return;
+    if (!this.activePointers.has(event.pointerId) || !this.context) return;
+
+    const previous = this.activePointers.get(event.pointerId)!;
+    const current = { x: event.clientX, y: event.clientY };
+    this.activePointers.set(event.pointerId, current);
+
+    const pointers = Array.from(this.activePointers.values());
+
+    if (pointers.length === 1) {
+      const dx = current.x - previous.x;
+      const dy = current.y - previous.y;
+      this.moveSelected(dx * 0.0008, -dy * 0.0008);
+      return;
+    }
+
+    if (pointers.length === 2) {
+      const [a, b] = pointers;
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+
+      if (this.lastPinchDistance !== null) {
+        const scaleRatio = distance / Math.max(1, this.lastPinchDistance);
+        const nextFactor = THREE.MathUtils.clamp(scaleRatio, 0.96, 1.04);
+        this.scaleSelected(nextFactor, false);
+      }
+
+      this.lastPinchDistance = distance;
+    }
+  };
+
+  private onGesturePointerUp = (event: PointerEvent) => {
+    this.activePointers.delete(event.pointerId);
+    if (this.activePointers.size < 2) {
+      this.lastPinchDistance = null;
+    }
+    this.gestureSurface?.releasePointerCapture?.(event.pointerId);
+  };
 
   private preparePendingObject() {
     if (!this.template || this.pendingObject) return;
@@ -201,7 +283,7 @@ export class PlacementModule implements ExperienceModule {
     this.placedObjects.push(this.pendingObject);
     this.setSelectedObject(this.pendingObject);
     this.pendingObject = undefined;
-    this.setStatus("Table placed. Use the controls button to open move, rotate, and scale arrows.");
+    this.setStatus("Table placed. Open Controls, then swipe to move or pinch to scale.");
   }
 
   private addObject() {
@@ -286,7 +368,6 @@ export class PlacementModule implements ExperienceModule {
     const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
     this.selectedObject.position.addScaledVector(right, dx);
     this.selectedObject.position.addScaledVector(forward, dz);
-    this.setStatus("Moved selected table.");
   }
 
   private rotateSelected(deltaRadians: number) {
@@ -298,14 +379,16 @@ export class PlacementModule implements ExperienceModule {
     this.setStatus("Rotated selected table.");
   }
 
-  private scaleSelected(factor: number) {
+  private scaleSelected(factor: number, announce = true) {
     if (!this.selectedObject) {
       this.setStatus("No selected table to scale.");
       return;
     }
     const nextScale = THREE.MathUtils.clamp(this.selectedObject.scale.x * factor, 0.25, 4);
     this.selectedObject.scale.setScalar(nextScale);
-    this.setStatus(`Scale: ${nextScale.toFixed(2)}x`);
+    if (announce) {
+      this.setStatus(`Scale: ${nextScale.toFixed(2)}x`);
+    }
   }
 
   private toggleControlsPanel() {
@@ -313,7 +396,10 @@ export class PlacementModule implements ExperienceModule {
     if (this.controlsPanelEl) {
       this.controlsPanelEl.style.display = this.controlsVisible ? "grid" : "none";
     }
-    this.setStatus(this.controlsVisible ? "Controls opened." : "Controls hidden.");
+    if (this.gestureHintEl) {
+      this.gestureHintEl.style.display = this.controlsVisible ? "block" : "none";
+    }
+    this.setStatus(this.controlsVisible ? "Controls opened. Swipe to move, pinch to scale." : "Controls hidden.");
   }
 
   private createStatusOverlay(el: HTMLElement) {
@@ -380,62 +466,9 @@ export class PlacementModule implements ExperienceModule {
       return btn;
     };
 
-    const makeRepeatingControl = (label: string, action: () => void) => {
-      const btn = document.createElement("button");
-      let intervalId: number | undefined;
-      let timeoutId: number | undefined;
-
-      Object.assign(btn.style, {
-        padding: "12px 10px",
-        borderRadius: "14px",
-        border: "1px solid rgba(255,255,255,0.18)",
-        background: "rgba(255,255,255,0.08)",
-        color: "white",
-        fontSize: "18px",
-        fontWeight: "700",
-        cursor: "pointer",
-        pointerEvents: "auto",
-        touchAction: "none",
-      } as Partial<CSSStyleDeclaration>);
-      btn.textContent = label;
-
-      const clearTimers = () => {
-        if (timeoutId !== undefined) {
-          window.clearTimeout(timeoutId);
-          timeoutId = undefined;
-        }
-        if (intervalId !== undefined) {
-          window.clearInterval(intervalId);
-          intervalId = undefined;
-        }
-      };
-
-      const start = (e: PointerEvent) => {
-        e.preventDefault();
-        clearTimers();
-        action();
-        timeoutId = window.setTimeout(() => {
-          intervalId = window.setInterval(action, 60);
-        }, 220);
-      };
-
-      const stop = () => clearTimers();
-
-      btn.addEventListener("pointerdown", start);
-      btn.addEventListener("pointerup", stop);
-      btn.addEventListener("pointercancel", stop);
-      btn.addEventListener("pointerleave", stop);
-
-      this.controlsPanelEl!.appendChild(btn);
-      return btn;
-    };
-
-    makeButton(this.controlsVisible ? "Hide Controls" : "Show Controls", () => {
+    const toggleBtn = makeButton("Show Controls", () => {
       this.toggleControlsPanel();
-      if (this.toolbarEl) {
-        const firstButton = this.toolbarEl.querySelector("button");
-        if (firstButton) firstButton.textContent = this.controlsVisible ? "Hide Controls" : "Show Controls";
-      }
+      toggleBtn.textContent = this.controlsVisible ? "Hide Controls" : "Show Controls";
     }, true);
 
     makeButton("Select", () => this.selectNextObject(1));
@@ -447,21 +480,47 @@ export class PlacementModule implements ExperienceModule {
     Object.assign(this.controlsPanelEl.style, {
       width: "100%",
       display: "none",
-      gridTemplateColumns: "repeat(4, minmax(54px, 1fr))",
+      gridTemplateColumns: "repeat(2, minmax(72px, 1fr))",
       gap: "8px",
       marginTop: "8px",
     } as Partial<CSSStyleDeclaration>);
 
-    makeRepeatingControl("↑", () => this.moveSelected(0, -0.05));
-    makeRepeatingControl("↶", () => this.rotateSelected(-Math.PI / 32));
-    makeRepeatingControl("↷", () => this.rotateSelected(Math.PI / 32));
-    makeRepeatingControl("＋", () => this.scaleSelected(1.03));
-    makeRepeatingControl("←", () => this.moveSelected(-0.05, 0));
-    makeRepeatingControl("↓", () => this.moveSelected(0, 0.05));
-    makeRepeatingControl("→", () => this.moveSelected(0.05, 0));
-    makeRepeatingControl("－", () => this.scaleSelected(1 / 1.03));
+    const makeControl = (label: string, onClick: () => void) => {
+      const btn = document.createElement("button");
+      btn.textContent = label;
+      Object.assign(btn.style, {
+        padding: "12px 10px",
+        borderRadius: "14px",
+        border: "1px solid rgba(255,255,255,0.18)",
+        background: "rgba(255,255,255,0.08)",
+        color: "white",
+        fontSize: "18px",
+        fontWeight: "700",
+        cursor: "pointer",
+        pointerEvents: "auto",
+      } as Partial<CSSStyleDeclaration>);
+      btn.onclick = onClick;
+      this.controlsPanelEl!.appendChild(btn);
+    };
+
+    makeControl("↶", () => this.rotateSelected(-Math.PI / 32));
+    makeControl("↷", () => this.rotateSelected(Math.PI / 32));
+
+    this.gestureHintEl = document.createElement("div");
+    this.gestureHintEl.textContent = "Swipe to move • Pinch to scale";
+    Object.assign(this.gestureHintEl.style, {
+      display: "none",
+      width: "100%",
+      marginTop: "8px",
+      textAlign: "center",
+      color: "rgba(255,255,255,0.78)",
+      fontSize: "12px",
+      fontWeight: "600",
+      letterSpacing: "0.01em",
+    } as Partial<CSSStyleDeclaration>);
 
     this.toolbarEl.appendChild(this.controlsPanelEl);
+    this.toolbarEl.appendChild(this.gestureHintEl);
     el.appendChild(this.toolbarEl);
   }
 
